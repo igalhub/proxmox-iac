@@ -121,18 +121,32 @@ sealed GitHub deploy key as a real Jenkins credential without ever
 storing it as plaintext. Full pipeline trigger/agent-strategy trail in
 `docs/TICKETS.md` under **PX-013**.
 
-## What's installed (PX-014, in progress)
+## What's installed (PX-014)
 
 | Component | Namespace | Install |
 |---|---|---|
 | ghcr.io push credential | `jenkins` | `kubectl apply -f k8s/jenkins/jenkins-ghcr-sealedsecret.yaml` — sealed classic PAT (`write:packages`/`read:packages`), surfaced as a "Username with password" Jenkins credential (`ghcr-push-token`) via `kubernetes-credentials-provider`, same pattern as PX-013's deploy key |
-| Landing page namespace/Service/Ingress | `landing-page` | `kubectl apply -f k8s/landing-page/namespace.yaml -f k8s/landing-page/service.yaml -f k8s/landing-page/ingress.yaml` |
+| ghcr.io pull secret | `landing-page` | `kubectl apply -f k8s/landing-page/ghcr-pull-sealedsecret.yaml` — same PAT, sealed as a `kubernetes.io/dockerconfigjson` secret, referenced via `imagePullSecrets` in the Deployment. Reused deliberately rather than minting a second token: classic PATs can't be scoped narrower than repo-unscoped anyway, so a second token wouldn't shrink the actual blast radius, just add a secret to track |
+| Landing page namespace/Service/Ingress/Deployment | `landing-page` | `kubectl apply -f k8s/landing-page/` (namespace, service, ingress, deployment) |
 
-`k8s/landing-page/deployment.yaml` is deliberately not written yet — its
-image tag needs to be the real commit SHA the Jenkins kaniko stage
-actually pushes to `ghcr.io/igalhub/proxmox-iac-landing`, not a
-placeholder. Added in a follow-up commit once a real pipeline run has
-pushed a real tag. Reachable at `http://status.lab.test` once deployed.
+**Why a pull secret instead of a public package:** the `ghcr.io`
+package defaults to private (inherits the repo's visibility). Considered
+making it public instead — simpler, no pull secret — but decided to
+keep it private and wire in `imagePullSecrets`. Before deciding, checked
+`landing/Dockerfile` and the complete file list under `landing/`
+line-by-line: only `requirements.txt`, `main.py`, `templates/index.html`
+ever get `COPY`'d in, no `ARG`/`ENV` secrets, no `.env`, no credentials
+of any kind baked into any layer — so either choice would have been
+safe from a content standpoint; private + pull secret was chosen anyway
+as the more conservative default.
+
+Reachable at `http://status.lab.test`. Verified end-to-end, not just
+"pod applied": real pod `Running` on `wk-1`, pulled from the private
+package via `ghcr-pull-secret` on the first attempt (no
+`ImagePullBackOff`), and the page itself returns real live data through
+the actual ingress path (3/3 nodes ready, real pod-phase counts, real
+memory %) — confirmed by `curl -H "Host: status.lab.test"` against the
+real nginx-ingress NodePort.
 
 ## Real architecture gap found during PX-010
 
