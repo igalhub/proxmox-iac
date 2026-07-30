@@ -679,6 +679,56 @@ line right after. `terraform validate` confirmed to need no real
 Proxmox credentials (validates syntax/schema, not live infra), matching
 this project's decision to keep apply-capable credentials out of CI.
 
+**Real run, job creation, and two more real bugs found (2026-07-31):**
+Job created via the Jenkins REST API (`createItem`), "Pipeline script
+from SCM" pointing at `git@github.com:igalhub/proxmox-iac.git`,
+`master`, credential `jenkins-github-deploy-key`.
+
+*Bug 1 — SSH host key verification.* First build failed at checkout:
+`No ED25519 host key is known for github.com and you have requested
+strict checking.` Fixed live by appending GitHub's real, published host
+keys (from `https://api.github.com/meta`) to the controller's
+`known_hosts`. Second build still failed — the *dynamic agent pod*
+(a fresh, ephemeral container per build) has no persistent filesystem
+and no `known_hosts` of its own, so the controller-only fix didn't
+cover it. Fixed properly via Jenkins' global "Git Host Key Verification
+Configuration" (`org.jenkinsci.plugins.gitclient.GitHostKeyVerificationConfiguration`,
+`ManuallyProvidedKeyVerificationStrategy`, set via the Script Console —
+first attempt used the wrong package path and failed to compile;
+corrected after a web search confirmed the real one), which the
+git-client plugin consults everywhere, not just per-filesystem. This
+covers every future agent pod, not just the one that happened to fail.
+
+*Bug 2 — a genuinely missing file, not a flaky test.* Build #3 (first
+full green run) reported "SUCCESS" but its Helm Chart Lint stage only
+linted 8 of 9 charts — `sealed-secrets` silently absent, no error. The
+script's `[ -f "$values_file" ] || continue` swallowed a missing file
+with zero logging. Could not reproduce locally (9/9, twice) or via
+`kubectl exec`/`kubectl cp` into a debug pod using the identical
+`alpine/helm:3.21.2` image (9/9 again) — the difference turned out to
+be that `kubectl cp` copies the local filesystem directly, bypassing
+git entirely. The real root cause: a **personal global gitignore rule**
+(`~/.gitignore_global`, `*secrets*`) was matching the
+`k8s/sealed-secrets/` directory name and had silently excluded it from
+every commit since PX-009 — `git log --all -- k8s/sealed-secrets/values.yaml`
+confirmed empty, and `git ls-tree` against the exact commit Jenkins
+checked out confirmed the file was genuinely absent from that tree. The
+file only ever existed on local disk; the real repo on GitHub never had
+it. Fixed by adding an explicit `!k8s/sealed-secrets/` override to this
+project's own `.gitignore`, then committing the file for real for the
+first time. Hardened `scripts/helm-lint-values.sh` regardless of root
+cause — missing files now fail loudly (`ERROR` + nonzero exit) instead
+of silently skipping, with a final linted-count assertion as a second
+line of defense. Mutation-tested: hid the file, confirmed the script
+exits 1 with both error messages; restored it, confirmed `git status`
+clean.
+
+**Process note, not blocking:** one commit during this ticket
+(`f00ffe4`, the script hardening fix) landed directly on `master`
+instead of a feature branch — caught immediately, disclosed, left
+as-is per explicit instruction rather than force-pushing to fix it.
+Branching discipline resumed for the rest of this ticket's work.
+
 **Acceptance criteria:**
 - [x] Jenkins reachable via nginx-ingress — necessary, not sufficient
       on its own; does not close this ticket by itself

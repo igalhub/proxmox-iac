@@ -22,3 +22,14 @@ crash.*.log
 
 # JetBrains IDE
 .idea/
+
+# k8s/sealed-secrets/ is the Sealed Secrets *controller's* own Helm
+# values (resource limits, no actual secret material) — it legitimately
+# belongs in git. A personal global gitignore rule matching "*secrets*"
+# was silently excluding this whole directory from every commit since
+# PX-009 (caught in PX-013: a real pipeline run linted 8 of 9 charts,
+# not 9, because this file had never actually been committed at all).
+# Explicit override so a global rule can't silently swallow tracked
+# project content again.
+!k8s/sealed-secrets/
+!k8s/sealed-secrets/**
