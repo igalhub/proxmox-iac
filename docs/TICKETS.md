@@ -96,7 +96,45 @@ authenticating against the Proxmox API.
 `Datastore.Audit`, `Datastore.AllocateSpace`, `VM.Audit`, `VM.Allocate`,
 `VM.Clone`, `VM.Config.CPU/Memory/Disk/Network/Cloudinit/Options/CDROM`,
 `VM.PowerMgmt`, `VM.GuestAgent.Unrestricted`) bound at path `/`, API token
-`terraform-iac` (Privilege Separation off). `VM.Monitor` — present in
+`terraform-iac` (Privilege Separation off).
+
+**Correction (PX-005 first apply attempt):** this list was incomplete —
+`SDN.Use` is also required to attach a VM's network device to `vmbr0`,
+even though it's a plain Linux bridge with no actual SDN configuration.
+Proxmox 9.x apparently wraps every bridge under an implicit SDN
+"localnetwork" zone internally, and permission checks go through that
+zone regardless. Found via a real `HTTP 403` on `terraform apply`, not
+anticipated in advance — added to the `Terraform` role after the fact.
+Worth remembering for the interview story: the original reasoning for
+omitting it (only matters for actual SDN-managed networks) was sound
+logic that turned out to be wrong for this specific Proxmox version —
+exactly why QA verifies against the real host instead of trusting
+reasoning alone.
+
+**Second correction (same retry cycle):** `VM.Config.HWType` also
+required — a real Proxmox privilege (distinct from `VM.Config.CPU`
+and `VM.Config.Options`) covering OS type/machine type/BIOS-level
+settings, which the clone sets from the template's `ostype: l26`.
+Added to the `Terraform` role. Pattern holding so far: each missing
+privilege surfaces as its own individual `403` on the specific field
+it gates, one at a time, rather than Proxmox reporting everything
+missing up front — expect this list to still be provisional until a
+`terraform apply` actually completes end to end.
+
+**Partial-state note, worth remembering as a Terraform concept, not just
+a Proxmox one:** this failure happened *after* the clone step succeeded
+but before full configuration (resize/CPU/memory/cloud-init) applied —
+confirmed via `terraform state list` (all 3 resources tracked) and `qm
+list` on the host (VMs 110/111/112 exist, still at the template's
+original sizing). Checked before advising any fix, per the "verify no
+partial state" habit. Because Terraform's state already tracks these as
+existing resources, the next `apply` performs an in-place update to
+finish configuring them — it does not re-clone or duplicate. This is
+Terraform's state model doing exactly what it's supposed to: a failed
+apply mid-way through doesn't mean starting over, it means resuming from
+wherever reality actually got to.
+
+`VM.Monitor` — present in
 bpg/proxmox's example role — confirmed **absent entirely** from PVE 9.2's
 role privilege list (not renamed, not findable under any filter), matching
 the provider docs' own warning that available privileges changed in PVE
@@ -116,9 +154,27 @@ access.
 
 ## PX-005 — Terraform VM resource definitions
 
-**Status:** IN PROGRESS — HCL written and plan-verified against the live
-host; `terraform apply` deliberately not yet run (real, state-changing
-action against physical infra — needs explicit go-ahead, see below).
+**Status:** DONE
+
+**Final verification (2026-07-30):** after the `SDN.Use` and
+`VM.Config.HWType` corrections, `terraform apply` completed clean —
+Terraform's in-place update finished configuring the 3 already-cloned VMs
+(resize/CPU/memory/cloud-init) rather than re-cloning, per the partial-state
+note above. Verified independently, not from Terraform's own exit code
+alone: direct `ssh -i ~/.ssh/homelab ubuntu@192.168.10.1{0,1,2}` to all
+three VMs succeeded — real SSH auth via the cloud-init-injected key,
+not console access — and `ip a` on each shows the exact static address
+Terraform declared (`.10`/`.11`/`.12` on `eth0/24`), matching
+`docs/SPEC.md` §4 precisely. This is the strongest available proof: it
+confirms cloud-init actually ran, the network config actually applied,
+and the SSH path Ansible will reuse in PX-007 already works end to end.
+
+Separately cross-checked sizing against the Proxmox UI's own resource
+view for all 3 VMs — cp-1: 2 CPU/4.00GiB/40.00GiB, wk-1 and wk-2: both
+3 CPU/8.00GiB/60.00GiB, all "running." Matches `docs/SPEC.md` §3 exactly.
+Sizing and networking are now each confirmed via two independent sources
+(Proxmox's own view vs. what's observable from inside the guest OS),
+not just Terraform's own reported success.
 
 **Description:**
 VM resources for cp-1/wk-1/wk-2, cloned from the PX-003 template, with
@@ -141,13 +197,31 @@ template disk surviving. Node name (`pve`) confirmed live via
 `terraform plan` against the real host: 3 to add, 0 to change, 0 to
 destroy — sizing/IPs/VMIDs all match SPEC.md exactly.
 
+Router DHCP/static-lease spot-check (docs/SPEC.md §4) is now fully
+resolved — pool narrowed to `192.168.10.21`–`.49`, structurally excluding
+both `.10`–`.12` and `.50` from anything DHCP can hand out. No longer a
+blocker.
+
+**First `terraform apply` attempt (2026-07-30): failed on all 3 VMs.**
+`HTTP 403, Permission check failed (/sdn/zones/localnetwork/vmbr0,
+SDN.Use)`. Proxmox 9.x wraps even a plain Linux bridge under an implicit
+SDN "localnetwork" zone; attaching a VM's NIC to it requires `SDN.Use`,
+which had been deliberately omitted during PX-004's role setup on the
+assumption (wrong, for this PVE version) that it only mattered for
+actually-SDN-managed networks. Verified no partial/orphaned state before
+fixing anything: `terraform state list` empty, `qm list` on the host
+showed only the template — clone failed before creating anything, nothing
+to clean up. Fix: added `SDN.Use` to the `Terraform` role (PX-004's
+privilege list above needs a follow-up correction once this is fully
+verified). Token inherited it immediately (Privilege Separation off, no
+regeneration needed). Retry pending.
+
 **Acceptance criteria:**
-- [ ] `terraform apply` produces 3 VMs matching the SPEC.md sizing table
-      — blocked on explicit go-ahead + the router DHCP/static-lease
-      spot-check for `.10`-`.12` (flagged in docs/SPEC.md §4, not yet
-      confirmed done)
-- [ ] All 3 VMs are SSH-reachable at their planned static IPs with no
-      manual intervention after `apply`
+- [x] `terraform apply` produces 3 VMs matching the SPEC.md sizing table
+      — succeeded after the `SDN.Use`/`VM.Config.HWType` role corrections
+- [x] All 3 VMs are SSH-reachable at their planned static IPs with no
+      manual intervention after `apply` — verified via real SSH + `ip a`
+      on all three (see final verification note above)
 
 ---
 
@@ -307,7 +381,7 @@ at the time.
 | PX-002 | CI + lint tooling | DONE |
 | PX-003 | Cloud-init template on Proxmox | DONE |
 | PX-004 | Terraform module skeleton | DONE |
-| PX-005 | Terraform VM resource definitions | OPEN |
+| PX-005 | Terraform VM resource definitions | DONE |
 | PX-006 | Terraform state decision | OPEN |
 | PX-007 | Ansible inventory + roles skeleton | OPEN |
 | PX-008 | k3s cluster bring-up | OPEN |
