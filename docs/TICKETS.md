@@ -227,7 +227,7 @@ regeneration needed). Retry pending.
 
 ## PX-006 — Terraform state decision
 
-**Status:** OPEN
+**Status:** DONE
 
 **Description:**
 Decide and document (in `docs/SPEC.md`) local state file vs. a
@@ -235,10 +235,23 @@ self-managed remote backend. Home-lab single-operator project, so local
 state may be the pragmatic answer — but the trade-off (no state locking,
 no backup) needs to be a stated decision, not a default.
 
+**Decision (2026-07-30):** local state, documented in `docs/SPEC.md` §9
+with full rationale. Local state was already the de facto choice from
+PX-004/PX-005 (nothing else was ever configured) — this ticket makes it
+an explicit, defensible decision rather than an unexamined default.
+Trade-off named precisely: local backend does lock against concurrent
+applies from the *same* machine (confirmed via the real
+`.terraform.tfstate.lock.info` observed during PX-005's apply), so the
+actual gap is "no locking/durability across machines," narrower than
+"no locking at all." Revisit trigger stated: a second operator or CI
+running `apply` directly (not just `validate`/`plan`).
+
 **Acceptance criteria:**
-- [ ] Decision recorded in `docs/SPEC.md` with rationale
-- [ ] If local: `.gitignore` confirmed to exclude `*.tfstate*`
-      (already does — verify it's actually being honored)
+- [x] Decision recorded in `docs/SPEC.md` with rationale (§9)
+- [x] `.gitignore` exclusion of `*.tfstate*` verified actually honored —
+      `git check-ignore -v` against the real state files created during
+      PX-005's apply, and `git log --all -- terraform/terraform.tfstate`
+      confirms neither file has ever appeared in git history
 
 ---
 
@@ -382,7 +395,7 @@ at the time.
 | PX-003 | Cloud-init template on Proxmox | DONE |
 | PX-004 | Terraform module skeleton | DONE |
 | PX-005 | Terraform VM resource definitions | DONE |
-| PX-006 | Terraform state decision | OPEN |
+| PX-006 | Terraform state decision | DONE |
 | PX-007 | Ansible inventory + roles skeleton | OPEN |
 | PX-008 | k3s cluster bring-up | OPEN |
 | PX-009 | Core services (ingress/Redis/Postgres/Sealed Secrets) | OPEN |
