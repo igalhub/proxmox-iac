@@ -989,6 +989,63 @@ known at the time (in particular: how cleanly existing Helm releases
 adopt into ArgoCD `Application` CRs without a disruptive reinstall needs
 to be checked for real, not assumed).
 
+## PX-016 — Resolve Proxmox memory-gauge inaccuracy (wk-1/wk-2)
+
+**Status:** OPEN — not blocking, no urgency; do when convenient, not
+before PX-014/PX-015.
+
+**Background:** PX-007's `qemu-guest-agent` correction fixed the missing
+agent (install verified, `qm agent ping` succeeds on all 3 VMs) but did
+**not** fix Proxmox's UI still reporting wk-1/wk-2 at ~100% memory — 5
+minutes of polling showed zero change after the live install. Leading
+theory: Proxmox negotiates memory-stat capability with the guest agent
+over virtio-serial at VM *boot* time; installing/starting it live,
+post-boot, may not retroactively activate it. **Explicitly not an
+operational problem** — real usage is already confirmed fine independent
+of this gauge (`kubectl top nodes`: 13-17%, `Allocated resources`: 8%
+requests, `free -h`: 6.4-6.6Gi available). This ticket exists to either
+fix a cosmetic annoyance or formally stop chasing it — not because
+there's a resource risk.
+
+**Plan, in order — stop and reassess between each step rather than
+running straight through:**
+
+1. **Restart wk-1 and wk-2** (one at a time; wk-1 hosts Postgres/Redis so
+   confirm no in-progress work first; wk-2 hosts Jenkins so avoid mid-build).
+   This is a real, disruptive action against live workloads — needs
+   explicit go-ahead per ticket, same as every other state-changing step
+   in this repo, not bundled into a "just try it" pass.
+2. **Check the Proxmox memory reading for each** after it comes back up.
+   If accurate now: theory confirmed, done — document and close.
+3. **If still showing ~100% after restart:** check `pvestatd`'s own logs
+   on the Proxmox host (`journalctl -u pvestatd`) for an actual error
+   before changing anything else — cheap, non-disruptive, might explain
+   this directly instead of guessing further.
+4. **If inconclusive:** try enabling the balloon device via Terraform
+   (non-zero `balloon` in `terraform/vms.tf`, replacing the current
+   `balloon: 0`) — the actual purpose-built mechanism for this, separate
+   from the guest agent. Confirm via `terraform plan` what this actually
+   changes before applying; check whether it needs another reboot to
+   take effect cleanly rather than assuming it applies live.
+5. **If still unresolved after both real attempts:** stop chasing it.
+   Formally document Proxmox's own memory gauge as unreliable for this
+   deployment, and designate the in-cluster Grafana (PX-010) — sourced
+   from node-exporter running inside each guest, a more direct view than
+   anything the hypervisor infers externally — as the authoritative
+   source for memory monitoring going forward. This is a legitimate
+   closing decision, not a failure to reach one.
+
+**Acceptance criteria:**
+- [ ] wk-1 and wk-2 both restarted, memory reading checked immediately after each
+- [ ] If inaccurate post-restart: `pvestatd` logs checked for a real error
+- [ ] If still inconclusive: balloon-device change proposed via Terraform,
+      plan reviewed before apply
+- [ ] Either the gauge is confirmed fixed (with the reason documented), or
+      a formal decision to rely on in-cluster Grafana instead is recorded
+      — ticket closes with one of these two outcomes, not left hanging
+
+---
+
 ## Stretch (post-MVP, not blocking)
 
 - Longhorn distributed storage, replacing local-path for Postgres/Redis PVs
@@ -1017,3 +1074,4 @@ to be checked for real, not assumed).
 | PX-012 | Interview walkthrough doc | DONE |
 | PX-013 | Jenkins CI (Helm) with a real pipeline | DONE |
 | PX-014 | Landing page (live Prometheus metrics, real app) | OPEN |
+| PX-016 | Resolve Proxmox memory-gauge inaccuracy (wk-1/wk-2) | OPEN |
