@@ -64,3 +64,52 @@ cluster). The Sealed Secrets controller and Postgres Operator itself
 aren't pinned; the scheduler placed them on `wk-2`, which is fine —
 they're lightweight control-plane-style components, not part of the
 app-facing set the SPEC explicitly calls out for placement.
+
+## What's installed (PX-010)
+
+| Component | Namespace | Install |
+|---|---|---|
+| kube-state-metrics | `monitoring` | `helm install kube-state-metrics prometheus-community/kube-state-metrics -n monitoring --create-namespace -f k8s/kube-state-metrics/values.yaml` |
+| node-exporter | `monitoring` | `helm install node-exporter prometheus-community/prometheus-node-exporter -n monitoring -f k8s/node-exporter/values.yaml` (DaemonSet, all 3 nodes) |
+| Prometheus | `monitoring` | `helm install prometheus prometheus-community/prometheus -n monitoring -f k8s/prometheus/values.yaml` |
+| Grafana | `monitoring` | `helm install grafana grafana/grafana -n monitoring -f k8s/grafana/values.yaml` (`k8s/grafana/grafana-admin-sealedsecret.yaml` applied first) |
+
+Additional Helm repos used:
+```
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+helm repo add grafana https://grafana.github.io/helm-charts
+```
+
+**Scope note:** originally planned to extend an existing home-lab
+Prometheus/Grafana instance — that instance no longer exists (see
+`docs/TICKETS.md` PX-010's scope correction). Deployed fresh, in-cluster,
+instead. Standalone `prometheus`/`grafana` charts, not the bundled
+`kube-prometheus-stack` — the standalone `prometheus` chart bundles
+`kube-state-metrics`/`node-exporter` as subcharts by default, disabled
+in `k8s/prometheus/values.yaml` to avoid a duplicate install since both
+are already separate releases (their own placement per the SPEC role
+split needed them to be). Alertmanager and pushgateway also disabled —
+no on-call to page in a home lab.
+
+Two community Grafana dashboards provisioned via `gnetId` at install
+time (`k8s/grafana/values.yaml`): **Node Exporter Full** (1860) for
+per-node hardware metrics, **Kubernetes cluster monitoring (via
+Prometheus)** (315) for pod/deployment health via kube-state-metrics —
+together covering both halves of PX-010's "node/pod health" acceptance
+criterion.
+
+Grafana reachable at `http://grafana.lab.test` (add a hosts-file entry
+pointing at `wk-1`'s IP, or hit `<node-ip>:<nginx-ingress-nodeport>`
+directly with a `Host: grafana.lab.test` header).
+
+## Real architecture gap found during PX-010
+
+`cp-1` had no control-plane taint despite `docs/SPEC.md` §1 documenting
+one as "the k3s default" — it isn't; k3s only applies it if
+`--node-taint` is explicitly passed at install time, which PX-008's
+`k3s-server` role never did. Fixed both live (`kubectl taint`, so the
+running cluster matches intent immediately) and at the source
+(`ansible/roles/k3s-server/tasks/main.yml`, so a future VM rebuild
+doesn't silently lose it again). Full trail in `docs/TICKETS.md` under
+**PX-008**, not PX-010 — that's where the actual defect was, even though
+PX-010 (node-exporter needing to run on `cp-1` too) is what surfaced it.

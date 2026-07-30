@@ -1,0 +1,63 @@
+nodeSelector:
+  kubernetes.io/hostname: wk-1
+
+admin:
+  existingSecret: grafana-admin
+  userKey: admin-user
+  passwordKey: admin-password
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 96Mi
+  limits:
+    memory: 192Mi
+
+persistence:
+  enabled: true
+  size: 1Gi
+
+ingress:
+  enabled: true
+  ingressClassName: nginx
+  hosts:
+    - grafana.lab.test
+  path: /
+
+datasources:
+  datasources.yaml:
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        url: http://prometheus-server.monitoring.svc.cluster.local
+        access: proxy
+        isDefault: true
+
+dashboardProviders:
+  dashboardproviders.yaml:
+    apiVersion: 1
+    providers:
+      - name: default
+        orgId: 1
+        folder: ""
+        type: file
+        disableDeletion: false
+        editable: true
+        options:
+          path: /var/lib/grafana/dashboards/default
+
+dashboards:
+  default:
+    # Node Exporter Full — per-node hardware/OS metrics.
+    node-exporter-full:
+      gnetId: 1860
+      revision: 37
+      datasource: Prometheus
+    # Kubernetes cluster monitoring — pod/deployment health via
+    # kube-state-metrics, satisfies PX-010's "pod health" criterion
+    # alongside node-exporter-full's node coverage.
+    kubernetes-cluster:
+      gnetId: 315
+      revision: 3
+      datasource: Prometheus

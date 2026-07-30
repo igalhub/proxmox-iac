@@ -1,0 +1,32 @@
+# Standalone Prometheus, deliberately lighter than kube-prometheus-stack
+# (no Alertmanager, no pushgateway) — this lab has no on-call to page,
+# per docs/SPEC.md's sizing rationale against the confirmed-real
+# remaining RAM headroom.
+alertmanager:
+  enabled: false
+
+prometheus-pushgateway:
+  enabled: false
+
+# kube-state-metrics and node-exporter are already installed separately
+# (own Helm releases, pinned per docs/SPEC.md's role split) - disabling
+# the chart's bundled subcharts avoids a duplicate install.
+kube-state-metrics:
+  enabled: false
+
+prometheus-node-exporter:
+  enabled: false
+
+server:
+  nodeSelector:
+    kubernetes.io/hostname: wk-1
+  persistentVolume:
+    enabled: true
+    size: 4Gi
+  retention: "7d"
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 512Mi

@@ -7,12 +7,18 @@
 
 # Traefik disabled deliberately — nginx-ingress is installed instead in
 # PX-009, per docs/SPEC.md's "why nginx over the k3s default" rationale.
+# --node-taint keeps app workloads off the control-plane, per
+# docs/SPEC.md §1 — k3s does NOT apply this by default (a documented
+# assumption that turned out to be wrong; caught in PX-010, corrected
+# here so a future VM rebuild doesn't silently lose the taint again).
 - name: Install k3s server (control-plane)
   ansible.builtin.command: /tmp/k3s-install.sh
   args:
     creates: /usr/local/bin/k3s
   environment:
-    INSTALL_K3S_EXEC: "server --disable=traefik --write-kubeconfig-mode=644"
+    INSTALL_K3S_EXEC: >-
+      server --disable=traefik --write-kubeconfig-mode=644
+      --node-taint node-role.kubernetes.io/control-plane=true:NoSchedule
 
 - name: Wait for node token to exist
   ansible.builtin.wait_for:
