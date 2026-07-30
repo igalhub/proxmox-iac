@@ -95,7 +95,7 @@ Jenkins is explicitly called out as the heaviest *single component* (JVM baselin
 ## 4. Networking
 
 - All three VMs sit on the same bridge (`vmbr0`) as the rest of the home lab, static IPs assigned via cloud-init (not DHCP) so Ansible inventory and Terraform outputs stay stable across reboots.
-- Planned IPs (adjust to whatever's free in the existing 192.168.10.0/24 range): cp-1 `.10`, wk-1 `.11`, wk-2 `.12`. Confirm no collisions with existing lab devices before applying.
+- Planned IPs: cp-1 `.10`, wk-1 `.11`, wk-2 `.12`. **Confirmed free 2026-07-30** via a live ICMP ping sweep + ARP table cross-check of `192.168.10.0/24` (ARP catches devices that don't answer ping, e.g. `.3` — silent on ICMP but present in ARP; ping-only would have missed it). Only `.1` (gateway), `.2`, `.3`, `.4`, and `.50` (the Proxmox host) show any activity; `.10`–`.12` show up in neither. **Caveat, not fully closed:** this only sees what's currently active/recently ARP'd on the segment — a sleeping device or a static DHCP reservation for a currently-off device wouldn't appear here. Router's DHCP client list/static lease table is the actual authoritative source and hasn't been checked yet; do that spot-check before treating this as final, cheap insurance against a collision months from now.
 - CNI: k3s default (flannel, VXLAN backend). No case for Cilium/Calico here — flannel is sufficient for a 3-node lab cluster and switching CNIs is not one of the skills gaps this project targets.
 - Ingress traffic reaches nginx-ingress via a NodePort (or MetalLB, stretch — see §7) on wk-1; DNS/hosts-file entries on Igal's machine map friendly names (`jenkins.lab`, `argocd.lab`, `status.lab`) to that node's IP.
 
