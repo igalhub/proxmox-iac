@@ -28,17 +28,24 @@ declare -A COMPONENT_CHARTS=(
 )
 
 for name in "${!CHART_REPOS[@]}"; do
-  helm repo add "$name" "${CHART_REPOS[$name]}" >/dev/null
+  helm repo add "$name" "${CHART_REPOS[$name]}"
 done
-helm repo update >/dev/null
+helm repo update
 
 lint_dir=$(mktemp -d)
 trap 'rm -rf "$lint_dir"' EXIT
 
 status=0
+linted_count=0
+expected_count=${#COMPONENT_CHARTS[@]}
+
 for component in "${!COMPONENT_CHARTS[@]}"; do
   values_file="k8s/${component}/values.yaml"
-  [ -f "$values_file" ] || continue
+  if [ ! -f "$values_file" ]; then
+    echo "ERROR: expected values file not found: ${values_file}" >&2
+    status=1
+    continue
+  fi
 
   chart_ref="${COMPONENT_CHARTS[$component]}"
   chart_name="${chart_ref#*/}"
@@ -48,6 +55,12 @@ for component in "${!COMPONENT_CHARTS[@]}"; do
   if ! helm lint "$lint_dir/$component/$chart_name" -f "$values_file"; then
     status=1
   fi
+  linted_count=$((linted_count + 1))
 done
+
+if [ "$linted_count" -ne "$expected_count" ]; then
+  echo "ERROR: linted ${linted_count} component(s), expected ${expected_count} — a component was silently skipped" >&2
+  status=1
+fi
 
 exit "$status"
