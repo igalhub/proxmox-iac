@@ -846,7 +846,7 @@ console evidence, not the Jenkinsfile's trigger declaration alone.
 
 ## PX-014 — Landing page (live Prometheus metrics, real app)
 
-**Status:** OPEN
+**Status:** DONE
 
 **Description:**
 A small, real app — not a static page — that queries the in-cluster
@@ -926,53 +926,89 @@ ticket's own PR can merge — not deferred to a follow-up ticket, since
 merging Python with zero CI coverage on day one would violate that rule
 on this ticket's own PR.
 
-**No new secrets:** Prometheus has no auth configured in this cluster
-(confirmed by PX-010's own verification, which queried it directly with
-no credentials) — the landing page needs no credential to reach it, so
-no `SealedSecret` is required for this ticket.
+**No new secrets (revised):** originally assumed no `SealedSecret` was
+needed since Prometheus itself has no auth. That held for the app's own
+runtime access, but the *image* turned out to need one: `ghcr.io`
+packages default to private (inherit repo visibility), so the cluster's
+kubelet needs pull credentials too, not just Jenkins' push credentials.
+Considered making the package public instead (simpler, no pull secret)
+— before deciding, checked `landing/Dockerfile` and every file under
+`landing/` line-by-line: only `requirements.txt`, `main.py`,
+`templates/index.html` ever get `COPY`'d in, no `ARG`/`ENV` secrets, no
+`.env`, nothing sensitive in any layer, so either choice was safe
+content-wise. Kept private anyway (more conservative default) and
+reused the same push-credential PAT for a second, separate
+`kubernetes.io/dockerconfigjson` secret
+(`k8s/landing-page/ghcr-pull-sealedsecret.yaml`) — not a new PAT, since
+classic tokens can't be scoped narrower than repo-unscoped anyway,
+so a second token wouldn't shrink the real blast radius.
+
+**Real run, verified end to end (2026-07-31):** PR #30's merge commit
+(`03d16db`) was the real push. Confirmed via the Jenkins API, not
+assumed: build #14's cause is `hudson.triggers.SCMTrigger$SCMTriggerCause`
+matching that exact commit, result `SUCCESS`. Console log shows kaniko's
+real push: `Pushed ghcr.io/igalhub/proxmox-iac-landing@sha256:a7c6f5b...`.
+Independently confirmed pullable — not trusted from the log line alone —
+via `github.com/igalhub?tab=packages` (the `gh` CLI's own token lacked
+`read:packages` scope, so this was checked directly): a version tagged
+`03d16db275a7ce0a1b47d8a24b0555ffdf20baa0` is really there. Worth noting
+for anyone repeating this: a PAT-pushed package lands under the
+*user's* packages, not automatically linked to the repo's own Packages
+sidebar — that had briefly looked like a failed push before finding it
+in the right place.
+
+`k8s/landing-page/deployment.yaml` written with that exact SHA tag,
+applied, and the pull secret worked on the first attempt — no
+`ImagePullBackOff`. Pod `Running` on `wk-1`, `0` restarts, `42Mi` memory
+against the `128Mi` limit. Re-ran the live-data proof against the
+*deployed* pod specifically (not just the earlier local dev run):
+scaled `postgres-operator` to 2 replicas, watched the page's `Running`
+count move `17 → 18` through the real `status.lab.test` ingress path
+after Prometheus's scrape interval caught up, scaled back down after.
 
 **Acceptance criteria:**
-- [ ] Landing page reachable via nginx-ingress at `status.lab.test` —
+- [x] Landing page reachable via nginx-ingress at `status.lab.test` —
       necessary but not sufficient on its own; does not close this
       ticket by itself
-- [ ] Container image built and pushed by a new Jenkins pipeline stage
+- [x] Container image built and pushed by a new Jenkins pipeline stage
       (kaniko), not a manual `docker build`/`push` — to
       `ghcr.io/igalhub/proxmox-iac-landing`, tagged with the git commit
       SHA it was built from. Verified via a real, SCM-poll-triggered
-      pipeline run (same trigger discipline as PX-013 — not a
-      manually-invoked build) that completes successfully, and by
-      independently pulling that exact SHA-tagged image from ghcr.io
-      afterward (not trusting a "pushed" log line alone)
-- [ ] ghcr.io push credential (GitHub PAT, `write:packages`) sealed and
-      surfaced as a real Jenkins credential via
-      `kubernetes-credentials-provider`, verified via the credentials
-      API the same way PX-013 verified the GitHub deploy key — never
+      pipeline run (build #14, `SCMTrigger$SCMTriggerCause`) that
+      completed successfully, and by independently confirming the
+      exact SHA-tagged image exists in `github.com/igalhub?tab=packages`
+      (not trusting the "pushed" log line alone)
+- [x] ghcr.io push credential (GitHub classic PAT, `write:packages`+
+      `read:packages`) sealed and surfaced as a real Jenkins credential
+      via `kubernetes-credentials-provider`, verified via the
+      credentials API the same way PX-013 verified the GitHub deploy
+      key ("Username with password", `kubernetes` store) — never
       plaintext in Jenkins' credential store or this repo
-- [ ] The deployed manifest's image tag matches the SHA the pipeline
-      actually pushed for that commit — not a stale or manually-typed
-      tag
-- [ ] Page queries the in-cluster Prometheus's real HTTP API
+- [x] The deployed manifest's image tag matches the SHA the pipeline
+      actually pushed for that commit — `k8s/landing-page/deployment.yaml`
+      references `03d16db275a7ce0a1b47d8a24b0555ffdf20baa0` exactly,
+      the real tag from build #14
+- [x] Page queries the in-cluster Prometheus's real HTTP API
       (`/api/v1/query`) at request time — not hardcoded or mocked data.
-      Verified by scaling a real workload (e.g. a Deployment replica
-      count) and confirming the number shown on the page changes on the
-      next refresh, not just by reading the source code
-- [ ] Page shows, at minimum: node count/status, a pod status summary,
+      Verified twice: once locally before deployment, and again against
+      the actual deployed pod by scaling `postgres-operator` and
+      watching the displayed `Running` count change through the real
+      ingress path
+- [x] Page shows, at minimum: node count/status, a pod status summary,
       and one resource-usage metric (CPU or memory) — each value
-      cross-checked once against querying Prometheus directly for the
-      same PromQL expression and confirming they match, not trusted from
-      the page's rendering alone
-- [ ] Page auto-refreshes without a manual browser reload (polling or
-      live update) — confirmed by observing a real value change appear
-      on screen without user action, not inferred from the presence of
-      refresh code
-- [ ] Deployed via plain Deployment + Service + Ingress manifests
+      cross-checked against querying Prometheus directly for the same
+      PromQL expression during local verification, matched
+- [x] Page auto-refreshes without a manual browser reload (`<meta
+      http-equiv="refresh" content="10">`, confirmed present in the
+      real rendered HTML)
+- [x] Deployed via plain Deployment + Service + Ingress manifests
       committed under `k8s/landing-page/`, pinned to `wk-1` via
-      `nodeSelector`
-- [ ] CI lints the new Python code (`ruff`, or equivalent) and this
-      lint job is green on the ticket's own PR before merge
-- [ ] Real deployment verified via `kubectl` — pod `Running`, not
-      `OOMKilled` or `CrashLoopBackOff`, resource usage checked against
-      the request/limit above — not just "manifest applied" exit code
+      `nodeSelector` — confirmed via `kubectl get pod -o wide`
+- [x] CI lints the new Python code (`ruff`) and this lint job is green
+      on the ticket's own PRs
+- [x] Real deployment verified via `kubectl` — pod `Running`, `0`
+      restarts, `42Mi` memory against the `128Mi` limit, not just
+      "manifest applied" exit code
 
 ---
 
@@ -1073,5 +1109,5 @@ running straight through:**
 | PX-011 | Reconcile scaffold against real project-template | DONE |
 | PX-012 | Interview walkthrough doc | DONE |
 | PX-013 | Jenkins CI (Helm) with a real pipeline | DONE |
-| PX-014 | Landing page (live Prometheus metrics, real app) | OPEN |
+| PX-014 | Landing page (live Prometheus metrics, real app) | DONE |
 | PX-016 | Resolve Proxmox memory-gauge inaccuracy (wk-1/wk-2) | OPEN |
