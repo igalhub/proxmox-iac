@@ -77,6 +77,13 @@ jobs:
         if: steps.check.outputs.present == 'true'
         run: pip install ansible-lint
 
+      - name: Install Ansible collection dependencies
+        if: steps.check.outputs.present == 'true'
+        run: |
+          if [ -f ansible/requirements.yml ]; then
+            ansible-galaxy collection install -r ansible/requirements.yml
+          fi
+
       - name: ansible-lint
         if: steps.check.outputs.present == 'true'
         run: ansible-lint ansible/

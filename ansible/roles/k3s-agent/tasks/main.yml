@@ -1,0 +1,6 @@
+---
+# Real k3s agent install/join (using the server's join token) lands in
+# PX-008 — see docs/SPEC.md §7 build order. This is a structural stub only.
+- name: K3s-agent role placeholder
+  ansible.builtin.debug:
+    msg: "k3s-agent install/join implemented in PX-008"

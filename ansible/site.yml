@@ -1,0 +1,18 @@
+---
+- name: Baseline + hardening on all cluster nodes
+  hosts: k3s_cluster
+  become: true
+  roles:
+    - common
+
+- name: K3s control-plane
+  hosts: k3s_control_plane
+  become: true
+  roles:
+    - k3s-server
+
+- name: K3s workers
+  hosts: k3s_workers
+  become: true
+  roles:
+    - k3s-agent

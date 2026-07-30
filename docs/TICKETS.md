@@ -257,7 +257,7 @@ running `apply` directly (not just `validate`/`plan`).
 
 ## PX-007 — Ansible inventory + roles skeleton
 
-**Status:** OPEN
+**Status:** DONE
 
 **Description:**
 `ansible/inventory` (static, matching Terraform outputs), `ansible.cfg`,
@@ -265,9 +265,42 @@ role skeletons: common/hardening, k3s-server, k3s-agent. Resolve whether
 a separate containerd role is needed or if k3s's embedded containerd
 makes that redundant (see SPEC.md build order note) before writing it.
 
+**Containerd resolution:** no separate role — k3s bundles and manages
+its own embedded containerd, per `docs/SPEC.md`. A dedicated role would
+just duplicate what `k3s-server`/`k3s-agent` already own in PX-008.
+
+**Implementation notes (2026-07-30):** `common` role is real, functional
+content (not an empty stub) — apt baseline, non-root `deploy` user
+creation, passwordless sudo, SSH key install, and SSH hardening
+(disable password auth + root login). `k3s-server`/`k3s-agent` are
+deliberate placeholder stubs (`ansible.builtin.debug` only) — their real
+install/join logic is explicitly PX-008's job, not this ticket's.
+
+**Deliberately NOT run for real yet:** this ticket's acceptance criteria
+only require `--check` (dry-run) to pass, not an actual apply. Hardening
+tasks touch `sshd_config` (disable password auth / root login) — a real
+run belongs alongside PX-008's actual k3s bring-up, gated behind
+explicit confirmation the same way `terraform apply` was, since a
+mistake here risks the SSH access every later step depends on. Verified
+after the `--check` run that nothing was actually applied: `id deploy`
+returns "no such user" on all 3 real hosts.
+
+**Real check-mode bug caught and fixed:** `ansible.posix.authorized_key`
+failed in check mode with "Either user must exist or you must provide
+full path to key file in check mode" — the module needs to resolve the
+deploy user's home directory via the OS user database, which doesn't
+exist yet in a dry run (the preceding user-creation task is only
+simulated, not applied). Fixed by giving the task an explicit `path`
+instead of relying on user lookup.
+
 **Acceptance criteria:**
-- [ ] `ansible-lint` passes on all roles
-- [ ] `ansible-playbook --check` runs without errors against the 3 real VMs
+- [x] `ansible-lint` passes on all roles — clean at the `production`
+      profile (15 files), after fixing real violations: var-naming
+      (`common_` prefix), missing `meta.galaxy_info.author`, task/play
+      name casing, and an invalid `platforms.versions` value
+- [x] `ansible-playbook --check` runs without errors against the 3 real
+      VMs — `failed=0`, `unreachable=0` across cp-1/wk-1/wk-2, confirmed
+      via a real run against `192.168.10.10-12`, not assumed
 
 ---
 
@@ -396,7 +429,7 @@ at the time.
 | PX-004 | Terraform module skeleton | DONE |
 | PX-005 | Terraform VM resource definitions | DONE |
 | PX-006 | Terraform state decision | DONE |
-| PX-007 | Ansible inventory + roles skeleton | OPEN |
+| PX-007 | Ansible inventory + roles skeleton | DONE |
 | PX-008 | k3s cluster bring-up | OPEN |
 | PX-009 | Core services (ingress/Redis/Postgres/Sealed Secrets) | OPEN |
 | PX-010 | Observability extension | OPEN |
