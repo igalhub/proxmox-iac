@@ -1,9 +1,8 @@
 # Interview walkthrough — proxmox-iac, step by step
 
-This is the plan explained the way igalhub would walk an interviewer
-through it: what's being built, why each decision was made, and in what
-order. Not a spec (see `docs/SPEC.md` for that) — a rehearsed narrative
-for defending the project under questioning.
+What's being built, why each decision was made, and in what order. Not a
+spec (see `docs/SPEC.md` for that) — a rehearsed narrative for defending
+the project under questioning.
 
 ---
 
@@ -18,15 +17,13 @@ every clause in it.
 
 ---
 
-## Step 0 — Why this exists (the framing, say this first)
+## Step 0 — Why this exists (the framing)
 
-Feedback from Cast AI, Rhino, and WalkMe boiled down to: *not enough
-depth in Terraform and Ansible*. This project is a direct response — not
-"I followed a tutorial," but "I made real architectural decisions and
-can defend each one." Every tool choice in this repo has a documented
-one-breath justification (in `docs/SPEC.md`). An interviewer testing
-depth will ask "why X and not Y" — never answer "that's what the
-tutorial used."
+This project is a direct response — not "I followed a tutorial," but "I
+made real architectural decisions and can defend each one." Every tool
+choice in this repo has a documented one-breath justification (in
+`docs/SPEC.md`). An interviewer testing depth will ask "why X and not
+Y" — never answer "that's what the tutorial used."
 
 ---
 
