@@ -381,7 +381,7 @@ code:**
 
 ## PX-009 — Core services (ingress, Redis, Postgres, Sealed Secrets)
 
-**Status:** OPEN
+**Status:** DONE
 
 **Description:**
 nginx-ingress via Helm (Traefik confirmed disabled), Redis via Bitnami
@@ -389,11 +389,55 @@ Helm chart, Zalando Postgres Operator + one provisioned `postgresql` CR,
 Sealed Secrets controller with at least one real secret sealed and
 committed instead of left in plaintext values files.
 
+**Implementation notes (2026-07-30):** installed via plain `helm
+install`/`kubectl apply` against the live cluster — ArgoCD retrofit is
+build-order step 8, after core services are stable, so this
+deliberately isn't GitOps yet. Full install commands and rationale in
+`k8s/README.md`. Deviated from the ticket's listed component order:
+installed Sealed Secrets *before* Redis so Redis's own auth password
+could be a real sealed secret from the start, instead of a plaintext
+values-file password later rotated — one coherent implementation, no
+circling back.
+
+Sealed-secrets Helm repo had moved from `bitnami-labs.github.io` to
+`bitnami.github.io` (June 2026) — the ticket's/docs' assumed old URL
+404'd; caught and used the correct current one. `kubeseal` CLI installed
+locally matching the controller's exact version (`0.38.4`).
+
+Postgres CR uses `numberOfInstances: 1`, not the 2-node example from
+`docs/SPEC.md`'s operator rationale — deliberate trade-off against the
+resource budget (§3), not a limitation of the pattern; scaling to HA is
+a one-line CR change. Full reasoning in `k8s/README.md`.
+
+**Verified for real, not from Helm's own `--wait`/exit code:**
+- nginx-ingress: deployed a throwaway test app (`k8s/test-app/hello.yaml`,
+  deleted after), routed a real `curl` through the actual NodePort →
+  ingress → Service → pod path, got HTTP 200.
+- Redis: generated a real password, sealed it, applied the `SealedSecret`,
+  confirmed it decrypted into a real `Secret` in-cluster. Spun up a test
+  pod, connected with the real password, got `PONG` and a real `SET`/`GET`
+  round-trip.
+- Postgres: confirmed the operator auto-generated real credential Secrets
+  (`app-user.proxmox-iac-pg.credentials...`), connected from a test pod
+  using them, ran a real `SELECT 1, version()` against `app_db` as
+  `app_user` — PostgreSQL 18.3 confirmed live.
+- Confirmed no plaintext secret material anywhere in the committed YAML
+  (`grep` across `k8s/` before committing) — only the encrypted
+  `SealedSecret` blob and field-name references.
+- All pods `Running` (`kubectl get pods -A | grep -v Running` empty),
+  nginx-ingress/Redis/Postgres all correctly landed on `wk-1` per the
+  SPEC role split.
+
 **Acceptance criteria:**
-- [ ] Test route through nginx-ingress works
-- [ ] Redis reachable from a test pod
-- [ ] Postgres CR provisions successfully, connection verified
-- [ ] At least one `SealedSecret` committed and decrypting correctly in-cluster
+- [x] Test route through nginx-ingress works — real HTTP 200 via `curl`
+      through the actual NodePort/ingress/Service/pod path
+- [x] Redis reachable from a test pod — real `PONG` + `SET`/`GET`
+      round-trip using the sealed password
+- [x] Postgres CR provisions successfully, connection verified — real
+      `SELECT` query against `app_db` using operator-generated credentials
+- [x] At least one `SealedSecret` committed and decrypting correctly
+      in-cluster — `k8s/redis/redis-auth-sealedsecret.yaml`, confirmed
+      decrypted into a real `Secret` before Redis ever used it
 
 ---
 
@@ -490,7 +534,7 @@ at the time.
 | PX-006 | Terraform state decision | DONE |
 | PX-007 | Ansible inventory + roles skeleton | DONE |
 | PX-008 | k3s cluster bring-up | DONE |
-| PX-009 | Core services (ingress/Redis/Postgres/Sealed Secrets) | OPEN |
+| PX-009 | Core services (ingress/Redis/Postgres/Sealed Secrets) | DONE |
 | PX-010 | Observability extension | OPEN |
 | PX-011 | Reconcile scaffold against real project-template | DONE |
 | PX-012 | Interview walkthrough doc | DONE |
