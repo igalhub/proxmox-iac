@@ -121,6 +121,19 @@ sealed GitHub deploy key as a real Jenkins credential without ever
 storing it as plaintext. Full pipeline trigger/agent-strategy trail in
 `docs/TICKETS.md` under **PX-013**.
 
+## What's installed (PX-014, in progress)
+
+| Component | Namespace | Install |
+|---|---|---|
+| ghcr.io push credential | `jenkins` | `kubectl apply -f k8s/jenkins/jenkins-ghcr-sealedsecret.yaml` — sealed classic PAT (`write:packages`/`read:packages`), surfaced as a "Username with password" Jenkins credential (`ghcr-push-token`) via `kubernetes-credentials-provider`, same pattern as PX-013's deploy key |
+| Landing page namespace/Service/Ingress | `landing-page` | `kubectl apply -f k8s/landing-page/namespace.yaml -f k8s/landing-page/service.yaml -f k8s/landing-page/ingress.yaml` |
+
+`k8s/landing-page/deployment.yaml` is deliberately not written yet — its
+image tag needs to be the real commit SHA the Jenkins kaniko stage
+actually pushes to `ghcr.io/igalhub/proxmox-iac-landing`, not a
+placeholder. Added in a follow-up commit once a real pipeline run has
+pushed a real tag. Reachable at `http://status.lab.test` once deployed.
+
 ## Real architecture gap found during PX-010
 
 `cp-1` had no control-plane taint despite `docs/SPEC.md` §1 documenting
