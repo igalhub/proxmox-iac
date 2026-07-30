@@ -174,7 +174,7 @@ showing the new cluster's node/pod health.
 
 ## PX-011 — Reconcile scaffold against real `igalhub/project-template`
 
-**Status:** DONE
+**Status:** DONE — `.claude/dev-check.sh` copied in and verified via a real `/dev-check` run (terraform/kubectl/helm UP, proxmox-host UP; ansible DOWN and k3s-cluster DOWN both expected at this stage)
 
 **Description:**
 Original scaffold (PX-001) was hand-built from documented conventions
@@ -193,10 +193,9 @@ Terraform/Ansible-aware CI jobs the template itself has no opinion on).
 - [x] `CLAUDE.md` matches the real template's workflow rigor
 - [x] `TICKETS.md` matches the real template's ticket format
 - [x] CI/Makefile/hooks added per the bash-path pattern
-- [ ] `.claude/dev-check.sh` — write was blocked in-session (`.claude/` is
-      a protected path this session can't write to); script delivered to
-      Igal separately, needs manual copy into `.claude/dev-check.sh` +
-      `chmod +x`
+- [x] `.claude/dev-check.sh` — copied in manually (write was blocked in
+      the Cowork session that authored it), verified working via a real
+      `/dev-check` run
 
 ---
 
@@ -232,4 +231,4 @@ at the time.
 | PX-008 | k3s cluster bring-up | OPEN |
 | PX-009 | Core services (ingress/Redis/Postgres/Sealed Secrets) | OPEN |
 | PX-010 | Observability extension | OPEN |
-| PX-011 | Reconcile scaffold against real project-template | DONE (dev-check.sh copy pending) |
+| PX-011 | Reconcile scaffold against real project-template | DONE |
