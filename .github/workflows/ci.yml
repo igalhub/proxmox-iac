@@ -87,3 +87,26 @@ jobs:
       - name: ansible-lint
         if: steps.check.outputs.present == 'true'
         run: ansible-lint ansible/
+
+  ruff:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Check for landing page Python code
+        id: check
+        run: |
+          if [ -d landing ] && compgen -G "landing/*.py" > /dev/null; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "landing/ not started yet, skipping"
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install ruff
+        if: steps.check.outputs.present == 'true'
+        run: pip install ruff
+
+      - name: ruff check
+        if: steps.check.outputs.present == 'true'
+        run: ruff check landing/
