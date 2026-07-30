@@ -603,7 +603,7 @@ questioning form.
 
 ## PX-013 — Jenkins CI (Helm) with a real pipeline
 
-**Status:** OPEN
+**Status:** DONE
 
 **Description:**
 Jenkins deployed via its official Helm chart on `wk-2` — grouped with
@@ -729,6 +729,20 @@ instead of a feature branch — caught immediately, disclosed, left
 as-is per explicit instruction rather than force-pushing to fix it.
 Branching discipline resumed for the rest of this ticket's work.
 
+**Real SCM-poll-triggered run, verified (2026-07-31):** build #6's merge
+commit (`1380090`, PR #23) was deliberately left as the real push for
+`pollSCM('H/5 * * * *')` to detect on its own — not manually triggered.
+Polled the job API afterward rather than assuming: build **#7**'s
+`causes[]._class` is `hudson.triggers.SCMTrigger$SCMTriggerCause`
+(`"Started by an SCM change"`), not `UserIdCause`, and its `changeSets`
+correctly attributes commit `b1818a2` (part of that same merge). Console
+log for #7 checked directly, not inferred from #6: all 9
+`--- helm lint: ... ---` blocks present, each `0 chart(s) failed`,
+`ansible-lint` "Passed: 0 failure(s), 0 warning(s)" at the `production`
+profile, `Finished: SUCCESS`. This is the one criterion that could not be
+satisfied by a manual run by definition — now closed with direct API and
+console evidence, not the Jenkinsfile's trigger declaration alone.
+
 **Acceptance criteria:**
 - [x] Jenkins reachable via nginx-ingress — necessary, not sufficient
       on its own; does not close this ticket by itself
@@ -737,17 +751,14 @@ Branching discipline resumed for the rest of this ticket's work.
       lint (`helm lint` against each chart's values under `k8s/`)
 - [x] Jenkins Kubernetes plugin configured with a pod template for
       dynamic build agents, pinned to `wk-2`
-- [x] A manually-triggered pipeline run completes successfully, all 3
-      stages green — verified via console log: 9/9 charts linted (after
-      the sealed-secrets fix above), `ansible-lint` passes at the
-      `production` profile, zero `ERROR` lines, `Finished: SUCCESS`.
-      `job/proxmox-iac-ci/config.xml` confirms the `pollSCM('H/5 * * * *')`
-      trigger from the Jenkinsfile is genuinely registered
-      (`hudson.triggers.SCMTrigger`, `spec: H/5 * * * *`) — **the actual
-      SCM-poll-triggered run (not manual) is still pending**: this very
-      commit is the real push it needs to detect. Will verify the
-      resulting build's cause via the API (`Cause$SCMTriggerCause`, not
-      `UserIdCause`) in a follow-up commit once observed, not assumed.
+- [x] A real pipeline run completes successfully, all 3 stages green,
+      triggered by SCM polling against a real push — not a manual
+      trigger. Verified via the Jenkins API: build #7's cause is
+      `hudson.triggers.SCMTrigger$SCMTriggerCause`, result `SUCCESS`;
+      console log confirms 9/9 charts linted, `ansible-lint` clean,
+      `terraform validate` clean (same commit's Terraform inputs
+      unchanged since build #6, which already exercised that stage
+      directly). See "Real SCM-poll-triggered run, verified" above.
 - [x] Build agent pod confirmed ephemeral — observed directly via
       `kubectl get pods` during builds #3-#5: a `proxmox-iac-ci-N-...`
       pod appears mid-build (4/4 containers Running) and is gone by the
@@ -789,4 +800,4 @@ at the time.
 | PX-010 | Observability (in-cluster Prometheus + Grafana) | DONE |
 | PX-011 | Reconcile scaffold against real project-template | DONE |
 | PX-012 | Interview walkthrough doc | DONE |
-| PX-013 | Jenkins CI (Helm) with a real pipeline | OPEN |
+| PX-013 | Jenkins CI (Helm) with a real pipeline | DONE |
