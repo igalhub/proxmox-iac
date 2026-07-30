@@ -441,18 +441,44 @@ a one-line CR change. Full reasoning in `k8s/README.md`.
 
 ---
 
-## PX-010 — Observability extension
+## PX-010 — Observability (in-cluster Prometheus + Grafana)
 
 **Status:** OPEN
 
+**Scope correction (2026-07-30):** originally planned to extend an
+existing home-lab Prometheus/Grafana instance. During PM review, that
+instance turned out not to exist anymore — it was running on the old
+`192.168.10.6` Ubuntu VM (NodePort `30093`, so it was itself an in-cluster
+Grafana on whatever was running there) that got wiped at this project's
+start. Confirmed with Igal via explicit decision rather than assumed:
+deploy fresh Prometheus + Grafana in-cluster via Helm instead of leaving
+monitoring unresolved. `docs/PRD.md` and `docs/SPEC.md` §§1-2 updated to
+match — this is no longer "extend existing," it's "provision monitoring
+as code," which is arguably a better fit for this project's own premise
+anyway.
+
 **Description:**
-kube-state-metrics + node-exporter deployed to the new cluster; existing
-home-lab Prometheus scrape config updated; Grafana dashboard added
-showing the new cluster's node/pod health.
+kube-state-metrics + node-exporter deployed to the new cluster (as
+originally planned); Prometheus + Grafana deployed fresh via Helm on
+wk-1 (grouped with the other always-on services, kept off wk-2 to avoid
+contending with Jenkins builds — see `docs/SPEC.md` §1); Grafana
+dashboard added showing the new cluster's node/pod health.
+
+**Sizing note:** remaining host-level headroom is tight (~5GB, per
+`docs/SPEC.md` §3) and that number is about host RAM, not what's free
+*inside* wk-1's 8GB once Postgres/Redis/ArgoCD/ingress/landing page are
+already running there. Check actual free memory inside wk-1 before
+choosing between a full `kube-prometheus-stack` (bundles Alertmanager +
+extra exporters, likely more than needed) vs. slimmer standalone
+Prometheus + Grafana charts — don't assume either fits, verify.
 
 **Acceptance criteria:**
-- [ ] Existing Prometheus shows targets up for all 3 new nodes
-- [ ] Grafana dashboard renders live data from the new cluster
+- [ ] In-cluster Prometheus deployed via Helm, scraping kube-state-metrics
+      + node-exporter directly (no external scrape-config needed now)
+- [ ] In-cluster Grafana deployed via Helm, reachable via nginx-ingress
+- [ ] Grafana dashboard renders live node/pod health data for all 3 nodes
+- [ ] Actual memory footprint on wk-1 checked post-deploy against the
+      sizing note above, documented in this ticket either way
 
 ---
 
@@ -535,6 +561,6 @@ at the time.
 | PX-007 | Ansible inventory + roles skeleton | DONE |
 | PX-008 | k3s cluster bring-up | DONE |
 | PX-009 | Core services (ingress/Redis/Postgres/Sealed Secrets) | DONE |
-| PX-010 | Observability extension | OPEN |
+| PX-010 | Observability (in-cluster Prometheus + Grafana) | OPEN |
 | PX-011 | Reconcile scaffold against real project-template | DONE |
 | PX-012 | Interview walkthrough doc | DONE |
