@@ -11,9 +11,10 @@ Terraform (bpg/proxmox provider) clones VMs from a cloud-init Ubuntu 24.04
 template. Ansible hardens the VMs and installs/joins k3s. Inside the
 cluster: Redis (Helm), Postgres (Zalando operator), nginx-ingress,
 Jenkins, and a small landing page, all eventually managed by ArgoCD from
-this repo (GitOps). The home lab's existing Prometheus/Grafana is
-extended (kube-state-metrics + node-exporter) to monitor the new cluster
-rather than standing up a redundant monitoring stack.
+this repo (GitOps). Prometheus + Grafana are deployed fresh in-cluster
+via Helm (kube-state-metrics + node-exporter feed them) — the original
+plan to extend an existing home-lab instance was dropped once that
+instance turned out to no longer exist.
 
 This exists to close a specific, named gap from recent job rejections
 (Terraform/Ansible production depth) with a real, defensible artifact —
@@ -25,19 +26,24 @@ see `docs/PRD.md` for the full why.
 
 ```
 docs/         # PRD.md (why), SPEC.md (architecture, living doc), TICKETS.md
-terraform/    # VM provisioning (Phase 1 — not started yet)
-ansible/      # VM bootstrap + k3s install (Phase 2 — not started yet)
+terraform/    # VM provisioning (Phase 1)
+ansible/      # VM bootstrap + k3s install (Phase 2)
 k8s/          # Helm values / manifests / ArgoCD app defs (Phase 3+)
+landing/      # Landing page app (FastAPI, live Prometheus metrics)
 scripts/      # one-off host scripts (e.g. cloud-init template build)
 hooks/        # tracked pre-commit hook source
 .github/      # CI workflows
 .claude/      # Claude Code adapter scripts (dev-check.sh)
+Jenkinsfile   # CI pipeline run by the in-cluster Jenkins (PX-013)
 ```
 
 ## Status
 
-Architecture decided (see `docs/SPEC.md`), build not yet started beyond
-the Proxmox cloud-init template script. Live progress: `docs/TICKETS.md`.
+Cluster provisioned and running (Terraform + Ansible + k3s), core
+services (ingress, Redis, Postgres, Sealed Secrets), observability
+(Prometheus/Grafana), and Jenkins are all live. Landing page app is
+built; k8s deployment + Jenkins build/push wiring still in progress.
+Live progress: `docs/TICKETS.md`.
 
 ## Setup
 
@@ -72,10 +78,10 @@ reachability, whether a k3s cluster is currently reachable) — used by the
 
 ## CI
 
-GitHub Actions runs shellcheck on every push/PR to `master`. Terraform
-fmt/validate and ansible-lint jobs are wired in already but no-op cleanly
-until `terraform/` and `ansible/` exist (Phases 1 and 2) — they activate
-automatically, no CI edit needed when those phases land.
+GitHub Actions runs shellcheck, `terraform fmt`/`validate`, `ansible-lint`,
+and `ruff` (on `landing/`) on every push/PR to `master`. Each of the
+latter three is guarded to no-op cleanly if its directory doesn't exist
+yet — activates automatically, no CI edit needed when a new phase lands.
 
 ## License
 

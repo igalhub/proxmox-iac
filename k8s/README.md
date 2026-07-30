@@ -102,6 +102,25 @@ Grafana reachable at `http://grafana.lab.test` (add a hosts-file entry
 pointing at `wk-1`'s IP, or hit `<node-ip>:<nginx-ingress-nodeport>`
 directly with a `Host: grafana.lab.test` header).
 
+## What's installed (PX-013)
+
+| Component | Namespace | Install |
+|---|---|---|
+| Jenkins | `jenkins` | `helm install jenkins jenkins/jenkins -n jenkins --create-namespace -f k8s/jenkins/values.yaml` (`k8s/jenkins/jenkins-admin-sealedsecret.yaml` and `k8s/jenkins/jenkins-github-deploy-key-sealedsecret.yaml` applied first) |
+
+Additional Helm repo used:
+```
+helm repo add jenkins https://charts.jenkins.io
+```
+
+Pinned to `wk-2` via `nodeSelector` (controller and the dynamic Kubernetes
+build-agent pod template both), grouped with kube-state-metrics/
+node-exporter per the SPEC role split — isolated from wk-1's always-on
+data services. `kubernetes-credentials-provider` plugin surfaces the
+sealed GitHub deploy key as a real Jenkins credential without ever
+storing it as plaintext. Full pipeline trigger/agent-strategy trail in
+`docs/TICKETS.md` under **PX-013**.
+
 ## Real architecture gap found during PX-010
 
 `cp-1` had no control-plane taint despite `docs/SPEC.md` §1 documenting
