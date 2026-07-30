@@ -21,6 +21,10 @@ spec:
       image: alpine/helm:3.21.2
       command: ["sleep"]
       args: ["infinity"]
+    - name: kaniko
+      image: gcr.io/kaniko-project/executor:debug
+      command: ["sleep"]
+      args: ["infinity"]
 '''
         }
     }
@@ -57,6 +61,35 @@ spec:
             steps {
                 container('helm') {
                     sh './scripts/helm-lint-values.sh'
+                }
+            }
+        }
+
+        // PX-014: builds and pushes the landing page image on every push -
+        // no Docker daemon in this agent pod, so kaniko builds/pushes
+        // without one, fitting the same ephemeral-pod-agent pattern as
+        // the containers above. Tagged with the real commit SHA, never
+        // "latest" - see docs/TICKETS.md PX-014 for the full rationale.
+        stage('Build & Push Landing Image') {
+            steps {
+                container('kaniko') {
+                    withCredentials([usernamePassword(
+                        credentialsId: 'ghcr-push-token',
+                        usernameVariable: 'REGISTRY_USER',
+                        passwordVariable: 'REGISTRY_PASS'
+                    )]) {
+                        sh '''
+                            mkdir -p /kaniko/.docker
+                            AUTH=$(printf "%s:%s" "$REGISTRY_USER" "$REGISTRY_PASS" | base64 | tr -d '\\n')
+                            cat > /kaniko/.docker/config.json <<CONFIG
+{"auths":{"ghcr.io":{"auth":"$AUTH"}}}
+CONFIG
+                            /kaniko/executor \
+                                --context="dir://${WORKSPACE}/landing" \
+                                --dockerfile="${WORKSPACE}/landing/Dockerfile" \
+                                --destination="ghcr.io/igalhub/proxmox-iac-landing:${GIT_COMMIT}"
+                        '''
+                    }
                 }
             }
         }
