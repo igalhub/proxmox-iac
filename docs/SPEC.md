@@ -20,11 +20,10 @@ Status: architecture decided 2026-07-30, build not yet started beyond the cloud-
                          │  └────┬─────┘ └────┬─────┘ └─────┬─────┘ │
                          │       └─────────────┴──────────────┘      │
                          │              k3s cluster (flannel CNI)    │
-                         │                                            │
-                         │  ┌──────────────────────────────────────┐│
-                         │  │ (existing) Prometheus + Grafana VM     ││
-                         │  │  now also scrapes the k3s cluster      ││
-                         │  └──────────────────────────────────────┘│
+                         │   Prometheus + Grafana deployed in-cluster│
+                         │   via Helm — see §1 workload split below  │
+                         │   (revised 2026-07-30: the previous       │
+                         │   external instance no longer exists)     │
                          └─────────────────────────────────────────┘
 
   Provisioning flow:
@@ -36,7 +35,7 @@ Status: architecture decided 2026-07-30, build not yet started beyond the cloud-
 Inside the cluster, workloads are split by role, not spread evenly:
 
 - **cp-1 (control-plane):** runs only the k3s server components (API server, scheduler, controller-manager, embedded SQLite datastore, CoreDNS). No application workloads scheduled here (tainted `node-role.kubernetes.io/control-plane:NoSchedule`, the k3s default).
-- **wk-1 (data/apps worker):** Postgres (via the Zalando operator), Redis, the landing page, ArgoCD, nginx-ingress controller.
+- **wk-1 (data/apps worker):** Postgres (via the Zalando operator), Redis, the landing page, ArgoCD, nginx-ingress controller, **Prometheus + Grafana** (revised 2026-07-30 — grouped here as always-on services, deliberately kept off wk-2 to avoid contending with Jenkins builds; exact fit within wk-1's 8GB to be confirmed at PX-010 implementation time against real in-VM free memory, not assumed).
 - **wk-2 (CI/heavy worker):** Jenkins (controller + build agents as ephemeral pods), kube-state-metrics, node-exporter.
 
 This split exists so that if Jenkins runs a heavy build and eats a whole CPU core, it doesn't starve Postgres or the ingress controller.
@@ -67,7 +66,7 @@ This section exists so every line item below has a one-breath answer to "why thi
 
 **Jenkins** — the CI/CD server. Deployed via its official Helm chart, given a real job: on every push to this repo, run `terraform validate`, `ansible-lint`, Helm chart linting, and (once GitOps is live) trigger ArgoCD to sync. This is explicitly *not* a decorative Jenkins pod sitting idle — its pipelines are part of this project's own change-management story.
 
-**Prometheus + Grafana (existing, extended)** — already running elsewhere in the home lab; not redeployed. This project adds **kube-state-metrics** (translates Kubernetes object state — pod status, deployment replica counts — into Prometheus metrics) and **node-exporter** (per-node hardware/OS metrics: CPU, memory, disk) as a DaemonSet across the three new VMs, then adds scrape configs/ServiceMonitors so the existing Prometheus picks them up. No new time-series database, no new Grafana instance.
+**Prometheus + Grafana (in-cluster, revised 2026-07-30)** — originally planned to extend an existing home-lab instance; that instance turned out to no longer exist (it ran on the old `.6` VM wiped at project start, discovered when trying to actually point PX-010 at it). Deployed fresh, in-cluster, via Helm instead — arguably a better fit for this project's "provisioned as code" story than depending on an external instance anyway. This project adds **kube-state-metrics** (translates Kubernetes object state — pod status, deployment replica counts — into Prometheus metrics) and **node-exporter** (per-node hardware/OS metrics: CPU, memory, disk) as a DaemonSet across the three new VMs; Prometheus scrapes both directly since they're now all in the same cluster, no external scrape-config/ServiceMonitor wiring needed. Sized deliberately light given the tight remaining RAM headroom (§3) — full `kube-prometheus-stack` (which bundles Alertmanager, multiple exporters, longer default retention) is likely more than this lab needs; a slimmer standalone Prometheus + Grafana pairing is the current plan, confirmed at PX-010 implementation time.
 
 **ArgoCD** — GitOps controller. Watches a path in this Git repo containing Kubernetes manifests/Helm releases and continuously reconciles the live cluster to match what's committed. Chosen over Flux specifically because it ships a web UI: syncing status, diffs between Git and live state, and app health are all visible and clickable, which matters for demoing "yes, this is really GitOps" in an interview rather than describing it.
 
@@ -121,9 +120,9 @@ No Vault in this repo (that story lives in `vault-secrets-demo`). Because ArgoCD
 2. Terraform provisions cp-1/wk-1/wk-2 from that template (bpg/proxmox provider).
 3. Ansible bootstraps each VM (hardening, containerd, k3s install/join) — cluster comes up, `kubectl get nodes` green.
 4. nginx-ingress + Redis (Helm) + Postgres (Zalando operator) installed.
-5. kube-state-metrics + node-exporter added; existing Prometheus/Grafana extended to scrape.
+5. kube-state-metrics + node-exporter added; Prometheus + Grafana deployed fresh in-cluster via Helm (revised 2026-07-30 — no existing instance to extend, see §2).
 6. Jenkins (Helm) — done once the rest is stable, since it's the heaviest single component.
-7. Landing page (Prometheus API → live metrics), deployed behind nginx-ingress.
+7. Landing page (in-cluster Prometheus API → live metrics), deployed behind nginx-ingress.
 8. ArgoCD retrofitted to manage everything from step 4 onward going forward — existing Helm releases migrated under GitOps management rather than left as one-off `helm install`s.
 9. Stretch: Sealed Secrets, Longhorn, MetalLB, Jenkins pipeline coverage expanded.
 
