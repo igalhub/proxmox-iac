@@ -801,13 +801,33 @@ Helm releases both — no rework needed later.
 the git commit SHA it was built from (never `latest`) so the committed
 manifest pins a real, reproducible image — consistent with this
 project's "provisioned as code" posture (PX-006 made the same call for
-Terraform state: name the trade-off, don't leave it implicit). Build/push
-is a manual step for this ticket, documented in `k8s/README.md` —
-wiring it into the Jenkins pipeline is explicitly out of scope here
-(`docs/SPEC.md` §7 item 9 already lists "Jenkins pipeline coverage
-expanded" as a separate stretch item; bundling it into this ticket would
-mix an app change with a CI change, against this repo's own no-bundling
-rule).
+Terraform state: name the trade-off, don't leave it implicit).
+
+**Build/push mechanism — revised before implementation (Developer
+review):** originally scoped as a manual step to avoid mixing an app
+change with a CI change in one ticket. Reconsidered: PX-013 already
+stood up Jenkins with a real SCM-polling pipeline specifically so this
+project's own components get real CI/CD, not just Terraform/Ansible
+linting (`docs/PRD.md`'s own stated goal) — a manual `docker build/push`
+for the one component that's actually *this project's own software*
+would be a real gap in that story, not a scope-creep risk. Folded in as
+this ticket's own scope instead of deferred, since the two are the same
+change (a landing page with no way to actually publish its image isn't
+a complete deployable artifact).
+
+Mechanism: `Jenkinsfile` gets a new stage using **kaniko**
+(`gcr.io/kaniko-project/executor`), not `docker build` — the existing
+Jenkins agent pod template (PX-013) runs as unprivileged sidecar
+containers with no Docker daemon available, and kaniko builds/pushes
+OCI images from a Dockerfile without one, fitting the same ephemeral
+pod-agent pattern already in use rather than requiring
+Docker-in-Docker/privileged pods. Needs a real ghcr.io credential (a
+GitHub PAT scoped to `write:packages`) — sealed and surfaced via the
+`kubernetes-credentials-provider` plugin, same pattern PX-013 used for
+the GitHub deploy key (`k8s/jenkins/jenkins-ghcr-sealedsecret.yaml`),
+never stored as plaintext in Jenkins' own credential store or this
+repo. Runs on every pipeline execution (same as the existing lint
+stages — no path-based conditional for this first pass, kept simple).
 
 **Placement/sizing:** pinned to `wk-1` via `nodeSelector`, consistent
 with the rest of wk-1's always-on workloads (`docs/SPEC.md` §3 table).
@@ -837,10 +857,22 @@ no `SealedSecret` is required for this ticket.
 - [ ] Landing page reachable via nginx-ingress at `status.lab.test` —
       necessary but not sufficient on its own; does not close this
       ticket by itself
-- [ ] Container image built from `landing/Dockerfile`, pushed to
+- [ ] Container image built and pushed by a new Jenkins pipeline stage
+      (kaniko), not a manual `docker build`/`push` — to
       `ghcr.io/igalhub/proxmox-iac-landing`, tagged with the git commit
-      SHA it was built from — confirmed by the tag actually matching a
-      real commit, not `latest` or a placeholder tag
+      SHA it was built from. Verified via a real, SCM-poll-triggered
+      pipeline run (same trigger discipline as PX-013 — not a
+      manually-invoked build) that completes successfully, and by
+      independently pulling that exact SHA-tagged image from ghcr.io
+      afterward (not trusting a "pushed" log line alone)
+- [ ] ghcr.io push credential (GitHub PAT, `write:packages`) sealed and
+      surfaced as a real Jenkins credential via
+      `kubernetes-credentials-provider`, verified via the credentials
+      API the same way PX-013 verified the GitHub deploy key — never
+      plaintext in Jenkins' credential store or this repo
+- [ ] The deployed manifest's image tag matches the SHA the pipeline
+      actually pushed for that commit — not a stale or manually-typed
+      tag
 - [ ] Page queries the in-cluster Prometheus's real HTTP API
       (`/api/v1/query`) at request time — not hardcoded or mocked data.
       Verified by scaling a real workload (e.g. a Deployment replica
