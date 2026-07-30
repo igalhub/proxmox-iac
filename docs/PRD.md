@@ -6,7 +6,7 @@ A home-lab Kubernetes cluster (k3s, 1 control-plane + 2 workers) running on a si
 
 ## Why this exists
 
-Igal has been rejected from several roles (Cast AI, Rhino Federated Computing, WalkMe) where the feedback pointed at the same gap: not enough demonstrated depth in Terraform and Ansible at a "real infrastructure" level, as opposed to following a tutorial once. This project exists to close that gap with a genuine artifact: infrastructure he built, can explain line by line, and can talk through in an interview — not a toy repo that only proves he can copy-paste a getting-started guide.
+New-position search feedback pointed at the same gap: not enough demonstrated depth in Terraform and Ansible at a "real infrastructure" level, as opposed to following a tutorial once. This project exists to close that gap with a genuine artifact: infrastructure built from scratch, explainable line by line, and defensible in an interview — not a toy repo that only proves someone can copy-paste a getting-started guide.
 
 The bar for "done" isn't "it runs." It's "I can defend every decision in this repo under interview-style questioning": why bpg/proxmox over Telmate, why an operator for Postgres instead of a Helm chart, why nginx-ingress instead of the Traefik that ships free with k3s, what happens if a worker node dies, how a secret gets from Git to a running pod without ever being committed in plaintext.
 
@@ -36,7 +36,7 @@ The bar for "done" isn't "it runs." It's "I can defend every decision in this re
 - The existing home-lab Grafana shows live node/pod metrics for the new cluster within a dashboard, sourced from kube-state-metrics + node-exporter running on the new nodes.
 - Jenkins has at least one working pipeline that does something real for this repo (e.g., `terraform validate` + `ansible-lint` + a Helm chart lint/test on every push).
 - The landing page, reachable via the ingress, shows live-updating cluster health pulled from Prometheus's HTTP API.
-- Every architectural decision in `docs/SPEC.md` has a one- or two-sentence "why" that Igal can say out loud without looking it up.
+- Every architectural decision in `docs/SPEC.md` has a one- or two-sentence "why" that can be said out loud without looking it up.
 
 ## Constraints
 
