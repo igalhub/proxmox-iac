@@ -28,10 +28,12 @@ docs/         # PRD.md, SPEC.md (living doc), TICKETS.md
 terraform/    # VM provisioning (Phase 1)
 ansible/      # VM bootstrap + k3s install (Phase 2)
 k8s/          # Helm values / manifests / ArgoCD app defs (Phase 3+)
+landing/      # Landing page app (FastAPI, live Prometheus metrics)
 scripts/      # one-off host scripts (e.g. cloud-init template build)
 hooks/        # tracked pre-commit hook source (installed via `make install-hooks`)
 .github/      # CI workflows
 .claude/      # Claude Code adapter scripts (dev-check.sh)
+Jenkinsfile   # CI pipeline run by the in-cluster Jenkins (PX-013)
 ```
 
 ## Environment

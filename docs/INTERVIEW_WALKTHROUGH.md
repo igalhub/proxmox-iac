@@ -27,7 +27,7 @@ Y" — never answer "that's what the tutorial used."
 
 ---
 
-## Step 1 — Cloud-init template (PX-003, script done, not yet run)
+## Step 1 — Cloud-init template (PX-003, done)
 
 **What it is:** A Proxmox "VM template" — a golden, un-booted VM image
 marked read-only that Terraform will *clone* to create real VMs, instead
@@ -52,10 +52,10 @@ deliberately left to Terraform at clone time — the template is generic,
 dumb, and reusable; per-VM identity is provisioning's job, not the
 template's.
 
-**Status:** script exists (`scripts/build-cloud-init-template.sh`),
-hasn't been run yet on the physical host (`192.168.10.50`). This is the
-literal first domino — nothing downstream can start until this template
-exists.
+**Status:** done. Template VMID 9000 exists on the physical host
+(`192.168.10.50`), confirmed via `qm config 9000` showing `template: 1`.
+This was the literal first domino — nothing downstream could start until
+it existed.
 
 ---
 
@@ -238,43 +238,55 @@ surface area — worth rehearsing carefully.
 **What it is:** deploy `kube-state-metrics` (translates Kubernetes
 object state — pod status, replica counts — into Prometheus-scrapeable
 metrics) and `node-exporter` (per-node hardware/OS metrics: CPU, memory,
-disk) onto the three new VMs, then point the *existing* home-lab
-Prometheus at them and add a Grafana dashboard.
+disk) onto the three new VMs, plus a fresh, standalone Prometheus +
+Grafana via Helm, in-cluster, with two provisioned dashboards.
 
-**Why extend the existing Prometheus/Grafana instead of standing up a
-new one:** avoiding a redundant monitoring stack is itself the answer —
-one source of truth for metrics across the whole home lab, not a second
-silo. The "obvious" move for many people is to bundle a fresh
-kube-prometheus-stack; not doing that is a deliberate resource/
-architecture call given the 30GB budget.
+**Why in-cluster instead of extending the home lab's existing
+Prometheus/Grafana — say this precisely if asked, the original plan
+changed:** the plan going in *was* to extend an existing instance
+(`192.168.10.6:30093`), for the same "avoid a redundant monitoring
+stack" reasoning. That instance turned out to no longer exist — it ran
+on the old `.6` VM, wiped at the start of this project — discovered when
+actually trying to point this ticket at it. Rather than standing up a
+substitute external dependency, monitoring was brought fully in-scope
+and provisioned as code like everything else here. Deliberately *not*
+the bundled `kube-prometheus-stack` either — standalone `prometheus`/
+`grafana` charts, since the bundle's own kube-state-metrics/node-exporter
+subcharts would duplicate the separately-placed releases the SPEC's role
+split already calls for.
 
 ---
 
-## Step 9 — Jenkins (not yet ticketed in detail)
+## Step 9 — Jenkins (PX-013, done)
 
 Deployed last among the heavy components, specifically because it's the
 single heaviest component in the resource budget (JVM baseline is
 non-trivial even idle) — hence why it gets its own isolated worker
 (wk-2), separate from wk-1's always-on Postgres/Redis/ingress, so a build
-spike can't starve them. Given real work: on every push, run `terraform
-validate` + `ansible-lint` + Helm chart lint, and eventually trigger
-ArgoCD syncs. Not a decorative idle Jenkins pod — its pipelines are part
-of the project's actual change-management story.
+spike can't starve them. Given real work: on every push (detected via
+SCM polling — no public ingress for GitHub to webhook into), a real
+Jenkinsfile runs `terraform validate` + `ansible-lint` + Helm chart lint
+on a dynamic, ephemeral Kubernetes pod agent. Not a decorative idle
+Jenkins pod — verified via a genuine SCM-poll-triggered run, not a
+manually-invoked one, before this ticket closed.
 
 ---
 
-## Step 10 — Landing page (not yet ticketed)
+## Step 10 — Landing page (PX-014, in progress)
 
-A small app (planned Python/FastAPI or Node/Express) that queries
-Prometheus's HTTP API directly and renders live cluster health. Deployed
-as an ordinary Deployment+Service+Ingress like anything else in the
-cluster. Its purpose is explicitly dual: a real (if small) piece of
-software running in the stack, and the visual "proof of life" to
-screen-share in an interview.
+A small FastAPI app that queries Prometheus's HTTP API directly at
+request time and renders live cluster health (node readiness, pod
+status by phase, memory usage) — no hardcoded/mocked data, proven by
+scaling a real workload and watching the number change. Deployed as an
+ordinary Deployment+Service+Ingress like anything else in the cluster.
+App itself is built; k8s manifests and a Jenkins kaniko build/push stage
+(to ghcr.io) are next. Its purpose is explicitly dual: a real (if small)
+piece of software running in the stack, and the visual "proof of life"
+to screen-share in an interview.
 
 ---
 
-## Step 11 — ArgoCD retrofit (not yet ticketed)
+## Step 11 — ArgoCD retrofit (PX-015, stubbed)
 
 **What it is:** ArgoCD watches a path in this Git repo containing
 manifests/Helm releases and continuously reconciles the live cluster to
@@ -312,8 +324,13 @@ the same time.
 
 ## Where things stand right now
 
-Steps 0 (framing) and the doc/CI scaffolding are done. **Step 1 —
-running the cloud-init template script on the physical host — is the
-next real action**, and it's the one thing blocking every subsequent
-step. After that: PX-004 (Terraform skeleton + generating the Proxmox API
-token), then PX-005 through the rest in the fixed order above.
+Steps 1 through 9 are done: cluster provisioned and running, core
+services (ingress/Redis/Postgres/Sealed Secrets), observability
+(Prometheus/Grafana in-cluster), and Jenkins with a real,
+SCM-poll-verified pipeline. **Step 10 (landing page, PX-014) is the
+current work** — the FastAPI app is built and proven against live
+Prometheus data; next is the k8s deployment manifests and a Jenkins
+kaniko stage to build/push its image to ghcr.io. Step 11 (ArgoCD) is
+stubbed as PX-015, not yet scoped in detail, per this repo's own
+convention of writing tickets just before each phase starts. Live
+status: `docs/TICKETS.md`.

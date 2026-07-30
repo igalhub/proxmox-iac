@@ -2,7 +2,10 @@
 
 This is a living doc: update it in the same commit as any code change that alters architecture. If the code and this doc disagree, that's a bug in the doc.
 
-Status: architecture decided 2026-07-30, build not yet started beyond the cloud-init template (step 1).
+Status: architecture decided 2026-07-30. Build order steps 1-6 done
+(cluster, core services, observability, Jenkins); step 7 (landing page,
+PX-014) in progress — app built, k8s/Jenkins deployment wiring next.
+Live status: `docs/TICKETS.md`.
 
 ---
 
@@ -34,7 +37,7 @@ Status: architecture decided 2026-07-30, build not yet started beyond the cloud-
 
 Inside the cluster, workloads are split by role, not spread evenly:
 
-- **cp-1 (control-plane):** runs only the k3s server components (API server, scheduler, controller-manager, embedded SQLite datastore, CoreDNS). No application workloads scheduled here (tainted `node-role.kubernetes.io/control-plane:NoSchedule`, the k3s default).
+- **cp-1 (control-plane):** runs only the k3s server components (API server, scheduler, controller-manager, embedded SQLite datastore, CoreDNS). No application workloads scheduled here (tainted `node-role.kubernetes.io/control-plane:NoSchedule` — **not** actually a k3s default, contrary to what this line originally said; k3s only applies it if `--node-taint` is passed explicitly at install time. PX-008's role didn't; gap found and fixed during PX-010 — see `docs/TICKETS.md`).
 - **wk-1 (data/apps worker):** Postgres (via the Zalando operator), Redis, the landing page, ArgoCD, nginx-ingress controller, **Prometheus + Grafana** (revised 2026-07-30 — grouped here as always-on services, deliberately kept off wk-2 to avoid contending with Jenkins builds; exact fit within wk-1's 8GB to be confirmed at PX-010 implementation time against real in-VM free memory, not assumed).
 - **wk-2 (CI/heavy worker):** Jenkins (controller + build agents as ephemeral pods), kube-state-metrics, node-exporter.
 
@@ -81,7 +84,7 @@ Host: AMD Ryzen 5 5600H (6 cores / 12 threads), no GPU. **Confirmed live 2026-07
 | VM | vCPU | RAM | Disk | Role |
 |---|---|---|---|---|
 | cp-1 | 2 | 4 GB | 40 GB | k3s control-plane only, no app workloads scheduled |
-| wk-1 | 3 | 8 GB | 60 GB | Postgres (operator), Redis, ArgoCD, nginx-ingress, landing page |
+| wk-1 | 3 | 8 GB | 60 GB | Postgres (operator), Redis, ArgoCD, nginx-ingress, landing page, Prometheus + Grafana |
 | wk-2 | 3 | 8 GB | 60 GB | Jenkins (controller + ephemeral build agents), kube-state-metrics, node-exporter |
 | **Total** | **8 vCPU** | **20 GB** | **160 GB** | |
 
@@ -116,21 +119,21 @@ No Vault in this repo (that story lives in `vault-secrets-demo`). Because ArgoCD
 
 ## 7. Build order (agreed, do not skip ahead)
 
-1. ✅ Cloud-init Ubuntu 24.04 template on Proxmox (`qm template`) — script delivered, awaiting Igal to run it on the host.
-2. Terraform provisions cp-1/wk-1/wk-2 from that template (bpg/proxmox provider).
-3. Ansible bootstraps each VM (hardening, containerd, k3s install/join) — cluster comes up, `kubectl get nodes` green.
-4. nginx-ingress + Redis (Helm) + Postgres (Zalando operator) installed.
-5. kube-state-metrics + node-exporter added; Prometheus + Grafana deployed fresh in-cluster via Helm (revised 2026-07-30 — no existing instance to extend, see §2).
-6. Jenkins (Helm) — done once the rest is stable, since it's the heaviest single component.
-7. Landing page (in-cluster Prometheus API → live metrics), deployed behind nginx-ingress.
+1. ✅ Cloud-init Ubuntu 24.04 template on Proxmox (`qm template`).
+2. ✅ Terraform provisions cp-1/wk-1/wk-2 from that template (bpg/proxmox provider).
+3. ✅ Ansible bootstraps each VM (hardening, containerd, k3s install/join) — cluster comes up, `kubectl get nodes` green.
+4. ✅ nginx-ingress + Redis (Helm) + Postgres (Zalando operator) installed.
+5. ✅ kube-state-metrics + node-exporter added; Prometheus + Grafana deployed fresh in-cluster via Helm (revised 2026-07-30 — no existing instance to extend, see §2).
+6. ✅ Jenkins (Helm) — done once the rest is stable, since it's the heaviest single component.
+7. 🚧 Landing page (in-cluster Prometheus API → live metrics), deployed behind nginx-ingress. App built (PX-014); k8s manifests + Jenkins build/push stage in progress.
 8. ArgoCD retrofitted to manage everything from step 4 onward going forward — existing Helm releases migrated under GitOps management rather than left as one-off `helm install`s.
-9. Stretch: Sealed Secrets, Longhorn, MetalLB, Jenkins pipeline coverage expanded.
+9. Stretch: Longhorn, MetalLB, Jenkins pipeline coverage expanded (Sealed Secrets is already done, PX-009).
 
 ## 8. Open questions / not yet decided
 
-- Exact static IP assignments (needs a check against the live DHCP range/lab devices).
-- MetalLB vs plain NodePort for ingress entry point.
-- Whether Jenkins build agents run as k8s pods (Jenkins Kubernetes plugin, dynamic agents) or a fixed agent — leaning dynamic pod agents, to be confirmed at step 6.
+- ~~Exact static IP assignments~~ — resolved (§4): cp-1 `.10`, wk-1 `.11`, wk-2 `.12`, confirmed free and structurally reserved outside the DHCP pool.
+- ~~MetalLB vs plain NodePort for ingress entry point~~ — resolved in practice: NodePort is what's actually running (Jenkins/Grafana both reachable via the ingress-nginx NodePort). MetalLB remains a stretch item (§7.9) if a real LoadBalancer IP is wanted later.
+- ~~Whether Jenkins build agents run as k8s pods... or a fixed agent~~ — resolved (PX-013): dynamic Kubernetes pod agents via the Jenkins Kubernetes plugin, confirmed ephemeral in practice.
 - ~~`igalhub/project-template` scaffold could not be pulled into this repo~~ — resolved (PX-011): Igal pointed at the local checkout (`~/claudecode/projects/project-template`), scaffold reconciled against it. This repo follows the template's `--lang bash` shape (shellcheck, plain git pre-commit hook, no pre-commit-framework/uv dependency) since it's Terraform/Ansible, not Python, extended with Terraform-fmt/validate and ansible-lint CI jobs the template has no opinion on. One gap remains: `.claude/dev-check.sh` couldn't be written directly into this repo (protected path in that session) — delivered separately, needs manual copy-in.
 
 ## 9. Terraform state management
