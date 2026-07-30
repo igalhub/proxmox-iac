@@ -1,0 +1,62 @@
+# Sized against a real `free -h` check on wk-2 (7.1Gi available,
+# confirmed live — see docs/TICKETS.md PX-013), not the docs' original
+# "heaviest single component" assumption alone. Modest anyway: this
+# pipeline's actual workload is lint/validate, not a heavy build.
+controller:
+  nodeSelector:
+    kubernetes.io/hostname: wk-2
+
+  admin:
+    existingSecret: jenkins-admin
+    userKey: jenkins-admin-user
+    passwordKey: jenkins-admin-password
+
+  # kubernetes-credentials-provider surfaces the labeled k8s Secret
+  # (k8s/jenkins/jenkins-github-deploy-key-sealedsecret.yaml) as a real
+  # Jenkins SSH credential, so the pipeline can clone this private repo
+  # without a plaintext credential ever entering Jenkins' own store.
+  additionalPlugins:
+    - kubernetes-credentials-provider
+
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+
+  ingress:
+    enabled: true
+    ingressClassName: nginx
+    hostName: jenkins.lab.test
+
+  # kubernetes plugin ships in the chart's default installPlugins list —
+  # dynamic pod agents (agent.enabled below) work out of the box. SCM
+  # polling (not a webhook — no public ingress for GitHub to reach) is
+  # declared directly in the Jenkinsfile's `triggers { pollSCM(...) }`,
+  # not here.
+
+# Dynamic Kubernetes pod agents — decided in PX-013, not a static agent.
+# Pod template pinned to wk-2, same as the controller.
+agent:
+  enabled: true
+  nodeSelector:
+    kubernetes.io/hostname: wk-2
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 250m
+      memory: 512Mi
+
+persistence:
+  enabled: true
+  size: 4Gi
+
+rbac:
+  # Grants the Jenkins ServiceAccount permission to read Secrets in its
+  # namespace - required by kubernetes-credentials-provider to surface
+  # the sealed deploy key as a credential.
+  readSecrets: true

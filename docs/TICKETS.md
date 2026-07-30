@@ -644,17 +644,53 @@ it's a real, working trigger against a real push, which is what the
 acceptance criteria below actually require — not a simulated or
 manually-triggered run standing in for one.
 
+**Implementation notes (2026-07-31):** Jenkins deployed via Helm on
+`wk-2`. First install attempt's `--wait --timeout 5m` was too short —
+the chart's `init` container downloads `workflow-aggregator`'s full
+transitive plugin tree, genuinely still progressing past 5 minutes, not
+hung (confirmed by tailing its logs). Waited properly via `kubectl wait`
+instead, then `helm upgrade` to reconcile the release status back to
+`deployed` (the timed-out `helm install` had marked it `failed` without
+rolling anything back, since `--atomic` wasn't set).
+
+Repo is private, so the pipeline needs real Git credentials to clone
+it — not skipped. Generated a dedicated read-only SSH deploy key,
+added to GitHub via `gh api repos/.../keys`, sealed as a
+`kubernetes.io/ssh-auth`-shaped Secret
+(`k8s/jenkins/jenkins-github-deploy-key-sealedsecret.yaml`) matching the
+`kubernetes-credentials-provider` plugin's exact expected schema
+(labels/annotations, `username`/`privateKey` fields) — added that
+plugin plus `rbac.readSecrets: true` to `k8s/jenkins/values.yaml` so the
+sealed key surfaces as a real Jenkins credential without ever entering
+Jenkins' own credential store as plaintext. Verified via the real
+credentials API: credential ID `jenkins-github-deploy-key`, correctly
+typed "SSH Username with private key", username `git`.
+
+`scripts/helm-lint-values.sh` written and run locally for real before
+trusting it in the pipeline — pulls each `k8s/*/values.yaml`'s real
+upstream chart fresh (since these are values files for remote charts,
+not local chart directories `helm lint` can target directly) and lints
+against it. All 9 current charts pass. Shellchecked clean.
+
+Caught and fixed a real bug in the `Jenkinsfile` before it ever ran:
+`pip install ansible.posix` — not a pip package, it's a Galaxy
+collection, already handled by the `ansible-galaxy collection install`
+line right after. `terraform validate` confirmed to need no real
+Proxmox credentials (validates syntax/schema, not live infra), matching
+this project's decision to keep apply-capable credentials out of CI.
+
 **Acceptance criteria:**
-- [ ] Jenkins reachable via nginx-ingress — necessary, not sufficient
+- [x] Jenkins reachable via nginx-ingress — necessary, not sufficient
       on its own; does not close this ticket by itself
-- [ ] `Jenkinsfile` committed to this repo defining a pipeline with
+- [x] `Jenkinsfile` committed to this repo defining a pipeline with
       stages for `terraform validate`, `ansible-lint`, and a Helm chart
       lint (`helm lint` against each chart's values under `k8s/`)
-- [ ] Jenkins Kubernetes plugin configured with a pod template for
+- [x] Jenkins Kubernetes plugin configured with a pod template for
       dynamic build agents, pinned to `wk-2`
 - [ ] A real pipeline run completes successfully (all stages green),
       triggered by a real push to this repo via SCM polling — not a
-      manually-triggered build, not "the UI loads"
+      manually-triggered build, not "the UI loads" — **pending: job not
+      yet created in Jenkins, no real poll-triggered run yet**
 - [ ] Build agent pod confirmed ephemeral — created for the run, torn
       down after, verified via `kubectl get pods` during and after a
       real run
