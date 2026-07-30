@@ -1,0 +1,3 @@
+proxmox_endpoint  = "https://192.168.10.50:8006/"
+proxmox_api_token = "terraform@pve!terraform-iac=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+# proxmox_insecure defaults to true (self-signed cert on the host); override here only if that changes.
