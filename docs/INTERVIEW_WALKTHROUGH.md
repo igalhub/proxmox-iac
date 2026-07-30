@@ -272,17 +272,42 @@ manually-invoked one, before this ticket closed.
 
 ---
 
-## Step 10 — Landing page (PX-014, in progress)
+## Step 10 — Landing page (PX-014, done)
 
 A small FastAPI app that queries Prometheus's HTTP API directly at
 request time and renders live cluster health (node readiness, pod
 status by phase, memory usage) — no hardcoded/mocked data, proven by
-scaling a real workload and watching the number change. Deployed as an
-ordinary Deployment+Service+Ingress like anything else in the cluster.
-App itself is built; k8s manifests and a Jenkins kaniko build/push stage
-(to ghcr.io) are next. Its purpose is explicitly dual: a real (if small)
-piece of software running in the stack, and the visual "proof of life"
-to screen-share in an interview.
+scaling a real workload and watching the number change, twice: once
+locally before deployment, once against the actually-deployed pod.
+Deployed as an ordinary Deployment+Service+Ingress like anything else
+in the cluster.
+
+**How the image actually gets built — worth telling in full, it's a
+real story:** Jenkins builds and pushes the image itself, via a new
+`kaniko` stage — no Docker daemon available in the agent pod, and
+kaniko builds/pushes OCI images without one, fitting the same
+ephemeral-pod-agent pattern as the rest of the pipeline. Real,
+SCM-poll-triggered run confirmed via the Jenkins API (not a manual
+build), and the pushed image independently confirmed pullable via
+GitHub's own UI, not trusted from a console log line.
+
+**The credential story is the deeper answer if asked "how do you scope
+a CI credential":** getting Jenkins a `ghcr.io` push credential surfaced
+two real GitHub constraints, found by hitting them, not read in
+advance — fine-grained PATs don't support container-registry package
+operations at all; classic PATs need the full `repo` scope alongside
+`write:packages` specifically *because the repo is private* (GitHub
+couples package-write to full repo access for private repos). Accepted
+as a named trade-off (`docs/TICKETS.md` PX-014), with a follow-up
+ticket (PX-017) to narrow it back down once the repo goes public and
+that coupling no longer applies. "I hit a real platform constraint,
+named the trade-off, and left a tracked path back to least-privilege"
+is a materially better answer than pretending the token was scoped
+perfectly from the start.
+
+Its purpose is explicitly dual: a real (if small) piece of software
+running in the stack, and the visual "proof of life" to screen-share in
+an interview.
 
 ---
 
@@ -324,13 +349,12 @@ the same time.
 
 ## Where things stand right now
 
-Steps 1 through 9 are done: cluster provisioned and running, core
+Steps 1 through 10 are done: cluster provisioned and running, core
 services (ingress/Redis/Postgres/Sealed Secrets), observability
-(Prometheus/Grafana in-cluster), and Jenkins with a real,
-SCM-poll-verified pipeline. **Step 10 (landing page, PX-014) is the
-current work** — the FastAPI app is built and proven against live
-Prometheus data; next is the k8s deployment manifests and a Jenkins
-kaniko stage to build/push its image to ghcr.io. Step 11 (ArgoCD) is
-stubbed as PX-015, not yet scoped in detail, per this repo's own
+(Prometheus/Grafana in-cluster), Jenkins with a real,
+SCM-poll-verified pipeline, and the landing page — built, deployed via
+its own Jenkins-driven kaniko build/push, and proven live against real
+cluster data. **Step 11 (ArgoCD, PX-015) is next** — currently just a
+title-only stub, not yet scoped in detail, per this repo's own
 convention of writing tickets just before each phase starts. Live
 status: `docs/TICKETS.md`.

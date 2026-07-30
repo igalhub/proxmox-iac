@@ -41,9 +41,9 @@ Jenkinsfile   # CI pipeline run by the in-cluster Jenkins (PX-013)
 
 Cluster provisioned and running (Terraform + Ansible + k3s), core
 services (ingress, Redis, Postgres, Sealed Secrets), observability
-(Prometheus/Grafana), and Jenkins are all live. Landing page app is
-built; k8s deployment + Jenkins build/push wiring still in progress.
-Live progress: `docs/TICKETS.md`.
+(Prometheus/Grafana), Jenkins, and the landing page are all live —
+build order steps 1-7 done. ArgoCD retrofit (step 8) is next, not yet
+scoped in detail. Live progress: `docs/TICKETS.md`.
 
 ## Setup
 
