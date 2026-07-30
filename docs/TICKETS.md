@@ -766,13 +766,118 @@ console evidence, not the Jenkinsfile's trigger declaration alone.
 
 ---
 
-## Landing page, GitOps (not yet ticketed in detail)
+## PX-014 — Landing page (live Prometheus metrics, real app)
 
-Per `docs/SPEC.md` build order §7, Phases 7–8 (landing page, ArgoCD
-retrofit) will get their own PX-0NN tickets written just before each
-phase starts, same as PX-004 through PX-013 — not written far in
-advance of the work, so acceptance criteria reflect what's actually known
-at the time.
+**Status:** OPEN
+
+**Description:**
+A small, real app — not a static page — that queries the in-cluster
+Prometheus's HTTP query API (`/api/v1/query`) directly and renders
+cluster health (node count/status, pod status summary, a resource-usage
+metric) as a live-updating page, reachable via nginx-ingress. Per
+`docs/PRD.md`, this is the project's own "here's proof it's alive"
+artifact, so it has to genuinely reflect the cluster's current state,
+not a canned screenshot-equivalent.
+
+**Language/framework — decided, not left open:** Python/FastAPI, single
+container. `docs/SPEC.md` §2 listed FastAPI or Node/Express as options;
+FastAPI chosen here to keep the stack's languages minimal (this project
+is otherwise Terraform/Ansible/YAML/bash — no Node anywhere yet) and
+because `httpx`+Jinja2 is enough to hit Prometheus's HTTP API and render
+one page without pulling in a frontend build toolchain for what's
+deliberately a small app.
+
+**Deployment shape — decided:** plain Kubernetes manifests (Deployment +
+Service + Ingress) under `k8s/landing-page/`, applied directly — not a
+Helm chart. Every other `k8s/<component>/` directory so far holds
+*values* for an upstream chart; there is no upstream chart for a custom
+app written in this repo, so a Helm chart here would just be
+boilerplate wrapping manifests nobody else consumes. This also sets up
+cleanly for PX-015 (ArgoCD retrofit), which manages plain manifests and
+Helm releases both — no rework needed later.
+
+**Image build/registry — decided:** built from a `Dockerfile` in
+`landing/`, pushed to `ghcr.io/igalhub/proxmox-iac-landing`, tagged with
+the git commit SHA it was built from (never `latest`) so the committed
+manifest pins a real, reproducible image — consistent with this
+project's "provisioned as code" posture (PX-006 made the same call for
+Terraform state: name the trade-off, don't leave it implicit). Build/push
+is a manual step for this ticket, documented in `k8s/README.md` —
+wiring it into the Jenkins pipeline is explicitly out of scope here
+(`docs/SPEC.md` §7 item 9 already lists "Jenkins pipeline coverage
+expanded" as a separate stretch item; bundling it into this ticket would
+mix an app change with a CI change, against this repo's own no-bundling
+rule).
+
+**Placement/sizing:** pinned to `wk-1` via `nodeSelector`, consistent
+with the rest of wk-1's always-on workloads (`docs/SPEC.md` §3 table).
+Confirmed live via `free -h` on wk-1 before sizing, not assumed: **6.6Gi
+available** of 7.8Gi total, with Postgres/Redis/nginx-ingress/Prometheus/
+Grafana already running there — comfortable headroom for a single small
+Python container. Proposed: requests `64Mi`/`50m`, limit `128Mi`/`100m`
+— generous relative to the app's actual footprint since headroom isn't
+the constraint here (unlike PX-013's tighter wk-2 sizing call); confirm
+against real observed usage after deployment and adjust if it's
+noticeably over- or under-sized.
+
+**CI coverage:** this is the first custom Python code in the repo — the
+existing CI workflow (`shellcheck`/`terraform`/`ansible-lint`) doesn't
+touch it. Per this repo's hard rule ("CI must be green before merge, no
+exceptions"), add a CI job that lints the new code (`ruff`) before this
+ticket's own PR can merge — not deferred to a follow-up ticket, since
+merging Python with zero CI coverage on day one would violate that rule
+on this ticket's own PR.
+
+**No new secrets:** Prometheus has no auth configured in this cluster
+(confirmed by PX-010's own verification, which queried it directly with
+no credentials) — the landing page needs no credential to reach it, so
+no `SealedSecret` is required for this ticket.
+
+**Acceptance criteria:**
+- [ ] Landing page reachable via nginx-ingress at `status.lab.test` —
+      necessary but not sufficient on its own; does not close this
+      ticket by itself
+- [ ] Container image built from `landing/Dockerfile`, pushed to
+      `ghcr.io/igalhub/proxmox-iac-landing`, tagged with the git commit
+      SHA it was built from — confirmed by the tag actually matching a
+      real commit, not `latest` or a placeholder tag
+- [ ] Page queries the in-cluster Prometheus's real HTTP API
+      (`/api/v1/query`) at request time — not hardcoded or mocked data.
+      Verified by scaling a real workload (e.g. a Deployment replica
+      count) and confirming the number shown on the page changes on the
+      next refresh, not just by reading the source code
+- [ ] Page shows, at minimum: node count/status, a pod status summary,
+      and one resource-usage metric (CPU or memory) — each value
+      cross-checked once against querying Prometheus directly for the
+      same PromQL expression and confirming they match, not trusted from
+      the page's rendering alone
+- [ ] Page auto-refreshes without a manual browser reload (polling or
+      live update) — confirmed by observing a real value change appear
+      on screen without user action, not inferred from the presence of
+      refresh code
+- [ ] Deployed via plain Deployment + Service + Ingress manifests
+      committed under `k8s/landing-page/`, pinned to `wk-1` via
+      `nodeSelector`
+- [ ] CI lints the new Python code (`ruff`, or equivalent) and this
+      lint job is green on the ticket's own PR before merge
+- [ ] Real deployment verified via `kubectl` — pod `Running`, not
+      `OOMKilled` or `CrashLoopBackOff`, resource usage checked against
+      the request/limit above — not just "manifest applied" exit code
+
+---
+
+## PX-015 — ArgoCD retrofit (not yet ticketed in detail)
+
+Per `docs/SPEC.md` build order §7 item 8, ArgoCD will be retrofitted to
+manage everything from step 4 onward (nginx-ingress, Redis, Postgres,
+Prometheus/Grafana, Jenkins, the landing page) under GitOps, migrating
+existing one-off `helm install`/`kubectl apply` releases rather than
+leaving them unmanaged. Ticket to be written just before this phase
+starts, same convention as every prior ticket — not written far in
+advance of the work, so acceptance criteria reflect what's actually
+known at the time (in particular: how cleanly existing Helm releases
+adopt into ArgoCD `Application` CRs without a disruptive reinstall needs
+to be checked for real, not assumed).
 
 ## Stretch (post-MVP, not blocking)
 
@@ -801,3 +906,4 @@ at the time.
 | PX-011 | Reconcile scaffold against real project-template | DONE |
 | PX-012 | Interview walkthrough doc | DONE |
 | PX-013 | Jenkins CI (Helm) with a real pipeline | DONE |
+| PX-014 | Landing page (live Prometheus metrics, real app) | OPEN |
