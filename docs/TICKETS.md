@@ -306,9 +306,7 @@ instead of relying on user lookup.
 
 ## PX-008 — k3s cluster bring-up
 
-**Status:** IN PROGRESS — roles written, lint/syntax-verified; the real
-`ansible-playbook` run (no `--check`) deliberately not executed yet,
-same gate as `terraform apply` (see below).
+**Status:** DONE
 
 **Description:**
 k3s-server role installs on cp-1 with `--disable=traefik`, captures join
@@ -338,21 +336,46 @@ here instead, and passes clean. This is exactly the "some things
 genuinely can't be verified outside the real environment" case, not a
 gap to paper over.
 
-**Deliberately NOT run for real yet:** this is also where PX-007's SSH
-hardening tasks (disable password auth, disable root login) run for the
-first time for real, alongside the actual k3s install across all 3
-VMs — a real, state-changing action against every layer this project
-depends on (SSH access + the cluster itself), gated behind explicit
-confirmation the same way `terraform apply` was.
+**Real run (2026-07-30):** before running for real, re-confirmed task
+order directly from the actual `common` role file (not from memory) —
+deploy-user creation (line 14) and SSH key install (line 29) both come
+before the two hardening tasks (lines 41/48), and both hardening tasks
+only `notify` a handler, which runs once at the end of the play, after
+the deploy user and its key are already fully in place. `ansible-playbook
+site.yml` (no `--check`) then ran clean end to end against all 3 real
+VMs: `failed=0`, `unreachable=0` on cp-1/wk-1/wk-2 (`ok=18/12/12`,
+`changed=11/9/9`). Nothing unexpected during the run itself.
+
+**Verified independently after the run, not from Ansible's own exit
+code:**
+1. Real SSH key-based login as the new `deploy` user succeeded on all 3
+   hosts, and passwordless `sudo` worked (`sudo -n whoami` → `root`).
+2. The original `ubuntu` user was **left alone, not removed** — its
+   key-based access still works on all 3 hosts. (Disabling password auth
+   doesn't affect any user's key-based login; the role never touched the
+   `ubuntu` account itself, only added `deploy` alongside it.)
+3. `kubectl get nodes -o wide` from cp-1 (as `deploy`, via `sudo`) shows
+   all 3 nodes **Ready**: cp-1 (control-plane), wk-1, wk-2 — k3s
+   `v1.36.2+k3s1`, `containerd://2.3.2-k3s2`.
+4. Password auth and root login are genuinely refused, checked two ways,
+   not just trusted from the task's "changed" report: (a) a live SSH
+   attempt with `PreferredAuthentications=password` against `ubuntu@`
+   shows the server's own auth banner offering only `publickey` — password
+   isn't even a method the server offers, not just a client-side failure;
+   (b) `sshd -T` (the daemon's live, authoritative effective config, not
+   the static file) confirms `passwordauthentication no` and
+   `permitrootlogin no` on all 3 hosts directly.
 
 **Acceptance criteria:**
 - [x] `ansible-lint` passes on the updated roles at the `production`
       profile
 - [x] `ansible-playbook --syntax-check` passes clean
-- [ ] `kubectl get nodes` (run from cp-1 or with kubeconfig pulled locally)
-      shows 3 Ready nodes
-- [ ] End-to-end: clean `terraform apply` + `ansible-playbook` run produces
-      a working cluster with zero manual steps
+- [x] `kubectl get nodes` (run from cp-1 or with kubeconfig pulled locally)
+      shows 3 Ready nodes — verified directly via SSH as the new `deploy`
+      user, not assumed from Ansible's report
+- [x] End-to-end: clean `terraform apply` + `ansible-playbook` run produces
+      a working cluster with zero manual steps — both phases (PX-005's
+      apply, this ticket's real playbook run) completed clean end to end
 
 ---
 
@@ -466,7 +489,7 @@ at the time.
 | PX-005 | Terraform VM resource definitions | DONE |
 | PX-006 | Terraform state decision | DONE |
 | PX-007 | Ansible inventory + roles skeleton | DONE |
-| PX-008 | k3s cluster bring-up | OPEN |
+| PX-008 | k3s cluster bring-up | DONE |
 | PX-009 | Core services (ingress/Redis/Postgres/Sealed Secrets) | OPEN |
 | PX-010 | Observability extension | OPEN |
 | PX-011 | Reconcile scaffold against real project-template | DONE |
