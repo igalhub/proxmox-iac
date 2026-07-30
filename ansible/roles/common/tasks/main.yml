@@ -1,0 +1,53 @@
+---
+- name: Update apt package cache
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Ensure baseline packages are installed
+  ansible.builtin.apt:
+    name:
+      - curl
+      - ca-certificates
+    state: present
+
+- name: Create non-root deploy user
+  ansible.builtin.user:
+    name: "{{ common_deploy_user }}"
+    groups: sudo
+    append: true
+    shell: /bin/bash
+    create_home: true
+
+- name: Allow deploy user passwordless sudo
+  ansible.builtin.copy:
+    dest: "/etc/sudoers.d/{{ common_deploy_user }}"
+    content: "{{ common_deploy_user }} ALL=(ALL) NOPASSWD:ALL\n"
+    mode: "0440"
+    validate: "visudo -cf %s"
+
+- name: Install deploy user's SSH public key
+  ansible.posix.authorized_key:
+    user: "{{ common_deploy_user }}"
+    key: "{{ lookup('file', common_deploy_user_ssh_public_key) }}"
+    path: "/home/{{ common_deploy_user }}/.ssh/authorized_keys"
+    state: present
+
+# Hardening below assumes the deploy user's key access (just installed above)
+# has been verified working before this ever runs for real — see
+# docs/TICKETS.md PX-007 for the real-run gate. Both changes only take
+# effect after an sshd restart, so a broken deploy-user key would still
+# leave the current ubuntu-user session usable to fix it.
+- name: Harden SSH - disable password authentication
+  ansible.builtin.lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: "^#?PasswordAuthentication"
+    line: "PasswordAuthentication no"
+  notify: Restart sshd
+
+- name: Harden SSH - disable root login
+  ansible.builtin.lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: "^#?PermitRootLogin"
+    line: "PermitRootLogin no"
+  notify: Restart sshd

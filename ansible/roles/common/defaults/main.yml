@@ -1,0 +1,3 @@
+---
+common_deploy_user: deploy
+common_deploy_user_ssh_public_key: "{{ lookup('env', 'HOME') }}/.ssh/homelab.pub"
