@@ -1012,18 +1012,88 @@ after Prometheus's scrape interval caught up, scaled back down after.
 
 ---
 
-## PX-015 — ArgoCD retrofit (not yet ticketed in detail)
+## PX-015 — ArgoCD retrofit
 
-Per `docs/SPEC.md` build order §7 item 8, ArgoCD will be retrofitted to
-manage everything from step 4 onward (nginx-ingress, Redis, Postgres,
-Prometheus/Grafana, Jenkins, the landing page) under GitOps, migrating
-existing one-off `helm install`/`kubectl apply` releases rather than
-leaving them unmanaged. Ticket to be written just before this phase
-starts, same convention as every prior ticket — not written far in
-advance of the work, so acceptance criteria reflect what's actually
-known at the time (in particular: how cleanly existing Helm releases
-adopt into ArgoCD `Application` CRs without a disruptive reinstall needs
-to be checked for real, not assumed).
+**Status:** OPEN
+
+**Background:** Per `docs/SPEC.md` build order §7 item 8, everything from
+step 4 onward — nginx-ingress, Redis, Postgres (Zalando operator),
+kube-state-metrics, node-exporter, Prometheus + Grafana, Jenkins, the
+landing page, and Sealed Secrets itself — is currently a one-off `helm
+install`/`kubectl apply` release, not managed by anything. This ticket
+retrofits ArgoCD as the GitOps controller reconciling all of it against
+this repo going forward, per `docs/SPEC.md` §2's stated rationale (web
+UI for demoing sync status/diffs/health, not just describing GitOps).
+
+**Description:**
+ArgoCD deployed via its own Helm chart on `wk-1` (per `docs/SPEC.md`'s
+role split, grouped with the other always-on data/apps services, kept
+off `wk-2` to avoid contending with Jenkins builds), exposed behind
+nginx-ingress at `argocd.lab.test`. Existing Helm releases and the
+landing page's raw manifests get adopted into ArgoCD `Application`
+resources pointing at this repo's `k8s/` directory rather than
+reinstalled — real adoption, verified against the live cluster, not
+assumed to be clean just because it's the documented pattern.
+
+**Decisions (locked in 2026-07-31, review feedback incorporated):**
+
+1. **Repo access for ArgoCD:** its own dedicated read-only SSH deploy
+   key, separate from Jenkins's (`k8s/jenkins/jenkins-github-deploy-key-sealedsecret.yaml`)
+   — not reused. Same sealing pattern: generate a dedicated ed25519 key,
+   add as a GitHub read-only deploy key via `gh api repos/.../keys`,
+   seal as a `kubernetes.io/ssh-auth`-shaped `SealedSecret` matching
+   ArgoCD's expected repo-credential schema (`k8s/argocd/argocd-github-deploy-key-sealedsecret.yaml`).
+   Two independent consumers get two independent credentials, so a
+   compromise or accidental leak of one doesn't hand out access on
+   behalf of the other.
+2. **Application layout: app-of-apps.** One root `Application`
+   (`k8s/argocd/root-app.yaml`, pointed at `k8s/argocd/apps/`) manages a
+   child `Application` manifest per service (nginx-ingress, Redis,
+   Postgres operator, kube-state-metrics, node-exporter, Prometheus,
+   Grafana, Jenkins, Sealed Secrets, landing page). Justification specific
+   to this project: the whole premise since PX-001 has been "provisioned
+   as code end to end" — `terraform apply` rebuilds the VMs, `ansible-playbook`
+   rebuilds the cluster, and app-of-apps is the piece that makes
+   rebuilding *everything running inside* a single reviewed action too
+   (sync the root `Application`) instead of nine separate ones. Flat,
+   independent `Application`s would leave that last mile as a manual
+   checklist — the same gap this whole repo exists to close.
+3. **Sync policy: manual for every `Application`, root included — no
+   auto-prune or self-heal anywhere in this initial retrofit.**
+   Consistent with every other state-changing action in this project
+   requiring explicit go-ahead (`CLAUDE.md`'s Reversibility section, the
+   per-ticket "never delegate destructive commands" rule): an
+   auto-synced `Application` would apply a Git change to the live
+   cluster with no human in the loop, which is exactly the class of
+   action this project's own conventions gate behind explicit approval
+   everywhere else. `docs/PRD.md`'s success criterion updated
+   accordingly (2026-07-31) — reconciliation happens via a *reviewed*
+   sync, not an unattended one; that's the deliberate choice, not an
+   unmet criterion. Revisit auto-sync per-`Application` in a future
+   ticket once the manual workflow itself has been exercised for real.
+4. **Adoption order:** lowest-risk services first — landing page
+   (stateless, already behind its own Deployment) — before touching
+   Postgres/Redis, so a bad adoption is caught on something disposable.
+
+**Acceptance criteria:**
+- [ ] ArgoCD installed via Helm on `wk-1`, reachable at `argocd.lab.test`
+      through nginx-ingress
+- [ ] ArgoCD has its own dedicated read-only deploy key, confirmed
+      working against a real sync (not just secret-exists)
+- [ ] Root `Application` (app-of-apps) manages one child `Application`
+      per existing release (nginx-ingress, Redis, Postgres operator,
+      kube-state-metrics, node-exporter, Prometheus, Grafana, Jenkins,
+      Sealed Secrets, landing page) — adopted without a disruptive
+      reinstall, confirmed via `kubectl get pods` showing no unexpected
+      restarts/recreations during adoption
+- [ ] Every `Application`, including the root, set to manual sync —
+      confirmed no auto-prune/self-heal enabled anywhere
+- [ ] Each `Application` shows `Synced`/`Healthy` in the ArgoCD UI after
+      a real, manually-triggered sync against actual live state
+- [ ] `docs/SPEC.md` build order and architecture diagram updated to
+      reflect ArgoCD as the actual reconciler, not a planned one
+- [ ] `docs/PRD.md` ArgoCD success criterion wording confirmed to match
+      the manual-sync decision above
 
 ## PX-016 — Resolve Proxmox memory-gauge inaccuracy (wk-1/wk-2)
 
@@ -1171,5 +1241,6 @@ and worth switching to instead of stopping at step 3 above.
 | PX-012 | Interview walkthrough doc | DONE |
 | PX-013 | Jenkins CI (Helm) with a real pipeline | DONE |
 | PX-014 | Landing page (live Prometheus metrics, real app) | DONE |
+| PX-015 | ArgoCD retrofit | OPEN |
 | PX-016 | Resolve Proxmox memory-gauge inaccuracy (wk-1/wk-2) | OPEN |
 | PX-017 | Narrow ghcr.io push token scope once repo is public | OPEN |
