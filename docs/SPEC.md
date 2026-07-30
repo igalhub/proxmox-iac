@@ -2,10 +2,10 @@
 
 This is a living doc: update it in the same commit as any code change that alters architecture. If the code and this doc disagree, that's a bug in the doc.
 
-Status: architecture decided 2026-07-30. Build order steps 1-6 done
-(cluster, core services, observability, Jenkins); step 7 (landing page,
-PX-014) in progress — app built, k8s/Jenkins deployment wiring next.
-Live status: `docs/TICKETS.md`.
+Status: architecture decided 2026-07-30. Build order steps 1-7 done
+(cluster, core services, observability, Jenkins, landing page). Step 8
+(ArgoCD retrofit) is next, not yet scoped in detail. Live status:
+`docs/TICKETS.md`.
 
 ---
 
@@ -125,7 +125,7 @@ No Vault in this repo (that story lives in `vault-secrets-demo`). Because ArgoCD
 4. ✅ nginx-ingress + Redis (Helm) + Postgres (Zalando operator) installed.
 5. ✅ kube-state-metrics + node-exporter added; Prometheus + Grafana deployed fresh in-cluster via Helm (revised 2026-07-30 — no existing instance to extend, see §2).
 6. ✅ Jenkins (Helm) — done once the rest is stable, since it's the heaviest single component.
-7. 🚧 Landing page (in-cluster Prometheus API → live metrics), deployed behind nginx-ingress. App built (PX-014); k8s manifests + Jenkins build/push stage in progress.
+7. ✅ Landing page (in-cluster Prometheus API → live metrics), deployed behind nginx-ingress.
 8. ArgoCD retrofitted to manage everything from step 4 onward going forward — existing Helm releases migrated under GitOps management rather than left as one-off `helm install`s.
 9. Stretch: Longhorn, MetalLB, Jenkins pipeline coverage expanded (Sealed Secrets is already done, PX-009).
 
