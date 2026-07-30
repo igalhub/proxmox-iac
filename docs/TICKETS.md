@@ -302,6 +302,84 @@ instead of relying on user lookup.
       VMs — `failed=0`, `unreachable=0` across cp-1/wk-1/wk-2, confirmed
       via a real run against `192.168.10.10-12`, not assumed
 
+**Correction (2026-07-31) — missing `qemu-guest-agent`, surfaced by a
+real Proxmox UI incident:** wk-1 and wk-2 both showed ~100% memory usage
+in the Proxmox UI. Diagnosed as PM before touching anything: inside both
+guests, `free -h` showed 6.4-6.6Gi *available* of 7.8Gi, `kubectl top
+nodes` showed 13-17% real usage, and node `Allocated resources` showed
+requests at 8% — every real number said this wasn't a resource problem.
+Root cause: `terraform/vms.tf` declares `agent { enabled = true }`
+(PX-005), telling Proxmox to expect a guest agent, but this ticket's
+`common` role never installed one — `qm agent 110/111/112 ping` all
+returned `"QEMU guest agent is not running"` (exit 255). Without it,
+Proxmox falls back to a host-side KVM view where any touched page
+(including Linux's own aggressive disk cache — 5.4Gi/5.0Gi of
+`buff/cache` on wk-1/wk-2) reads as "used," pinning the gauge near
+100%. Same pattern as the PX-008 control-plane taint gap: something
+declared on one side (Terraform) was never backed by anything on the
+other (Ansible), and neither ticket's acceptance criteria checked for
+it directly.
+
+**Fix applied, partially confirmed — documented honestly, not spun as
+fully resolved:**
+1. Added `qemu-guest-agent` to the `common` role's package list
+   alongside `curl`/`ca-certificates`, plus a task ensuring the systemd
+   service is `enabled`/`started`
+   (`ansible/roles/common/tasks/main.yml`). `ansible-lint` clean at
+   `production` profile. `ansible-playbook site.yml --check --diff` run
+   first — confirmed the apt install would land cleanly (`liburing2` as
+   the only additional dependency, nothing unexpected); the systemd
+   task's own check-mode failure ("Could not find the requested service"
+   — the service can't exist yet in a dry run) is the same class of
+   known check-mode limitation this ticket already documented for
+   `authorized_key` above, not a new bug.
+2. Applied for real via `ansible-playbook site.yml` against all 3 hosts
+   (cp-1 included — same gap existed there, `agent.enabled=true` applies
+   uniformly). **Verified, not assumed:** `qm agent 110/111/112 ping` now
+   all return exit 0 on every VMID (previously all three failed);
+   re-running the full playbook a second time reported `ok` (not
+   `changed`) for both the package and service tasks — real idempotency,
+   confirmed, not inferred from `state: present`/`enabled: true` alone.
+3. **The Proxmox-UI-accuracy hypothesis this fix was meant to prove did
+   NOT hold up under real observation.** Polled Proxmox's own UI-facing
+   API (`pvesh get .../status/current`) every 15s for 5 minutes (20
+   polls): wk-1 and wk-2 never moved off `100.5%`/`100.4%` — flat,
+   zero drift, not a slow convergence. cp-1 did show a different reading
+   post-fix (`76.2%`, `3.27GB/4GB`) but no real pre-fix baseline was
+   captured for cp-1 specifically, and that number doesn't cleanly match
+   `free -h`'s "used" or "total minus available" either — so it is
+   **not** claimed as evidence the fix worked, just noted as an
+   unexplained data point. Confirmed separately that memory ballooning
+   is fully disabled (`balloon: 0` in `terraform/vms.tf`) on all three
+   VMs, which was always going to be a second variable regardless of the
+   guest agent.
+
+**Decision: park the display question, don't chase it further right
+now.** Leading unverified theory: Proxmox may negotiate memory-stat
+capability with the guest agent over the virtio-serial channel at VM
+*boot* time, and installing/starting the agent live, after boot, may not
+retroactively activate it without a reboot (or without enabling the
+separate `balloon` device mechanism instead). Neither was tested — both
+are further disruptive, state-changing actions beyond what this
+correction set out to do, and forcing a reboot solely to test a
+monitoring-display theory isn't worth the disruption to running
+workloads (Postgres/Redis on wk-1, Jenkins on wk-2). **Explicitly not
+an operational question:** whether there's *real* memory pressure was
+already answered directly and independently of what Proxmox's gauge
+shows — `kubectl top nodes` (13-17%), `Allocated resources` (8%
+requests), and `free -h` (6.4-6.6Gi available) all agree there is none.
+This is a cosmetic monitoring-display issue, not a resource problem.
+Next step, opportunistic rather than forced: if either wk-1 or wk-2
+reboots for an unrelated real reason (kernel update, host maintenance),
+check whether its Proxmox memory reading becomes accurate afterward —
+that would confirm or rule out the boot-time-negotiation theory for
+free, without manufacturing a disruption just to test it.
+
+**qemu-guest-agent install itself stands on its own merits** regardless
+of the display question — it's also what enables clean guest shutdown,
+`qm exec`, and consistent snapshots, none of which worked before this
+fix either.
+
 ---
 
 ## PX-008 — k3s cluster bring-up
