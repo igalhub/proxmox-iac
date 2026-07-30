@@ -43,7 +43,7 @@ jobs:
             echo "present=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: hashicorp/setup-terraform@v3
+      - uses: hashicorp/setup-terraform@v4
         if: steps.check.outputs.present == 'true'
 
       - name: terraform fmt -check
