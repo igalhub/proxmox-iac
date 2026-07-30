@@ -1,0 +1,80 @@
+name: CI
+
+on:
+  push:
+    branches: ["master"]
+  pull_request:
+    branches: ["master"]
+
+jobs:
+  shellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install shellcheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+
+      - name: Shellcheck all scripts
+        run: |
+          shopt -s globstar nullglob
+          files=(*.sh **/*.sh)
+          # hooks/pre-commit is a real bash script but has no .sh extension
+          # (git hook naming convention) — include it explicitly.
+          [ -f hooks/pre-commit ] && files+=(hooks/pre-commit)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "No shell scripts found yet"; exit 0
+          fi
+          shellcheck "${files[@]}"
+
+  terraform:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for Terraform config
+        id: check
+        run: |
+          if [ -d terraform ] && compgen -G "terraform/**/*.tf" > /dev/null; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=true is false — Phase 1 (terraform/) not started yet"
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: hashicorp/setup-terraform@v3
+        if: steps.check.outputs.present == 'true'
+
+      - name: terraform fmt -check
+        if: steps.check.outputs.present == 'true'
+        run: terraform -chdir=terraform fmt -check -recursive
+
+      - name: terraform validate
+        if: steps.check.outputs.present == 'true'
+        run: |
+          cd terraform
+          terraform init -backend=false
+          terraform validate
+
+  ansible-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for Ansible content
+        id: check
+        run: |
+          if [ -d ansible ] && compgen -G "ansible/**/*.yml" > /dev/null; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ansible/ not started yet, skipping"
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install ansible-lint
+        if: steps.check.outputs.present == 'true'
+        run: pip install ansible-lint
+
+      - name: ansible-lint
+        if: steps.check.outputs.present == 'true'
+        run: ansible-lint ansible/

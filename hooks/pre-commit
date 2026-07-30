@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Pre-commit hook: shellcheck all staged .sh files (plus this hook itself).
+set -e
+
+files=$(git diff --cached --name-only --diff-filter=ACM -- '*.sh')
+
+if [ -z "$files" ]; then
+    exit 0
+fi
+
+if ! command -v shellcheck >/dev/null 2>&1; then
+    echo "shellcheck not installed locally — install it before committing bash scripts."
+    exit 1
+fi
+
+echo "$files" | xargs shellcheck
