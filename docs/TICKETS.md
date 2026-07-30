@@ -116,15 +116,36 @@ access.
 
 ## PX-005 — Terraform VM resource definitions
 
-**Status:** OPEN
+**Status:** IN PROGRESS — HCL written and plan-verified against the live
+host; `terraform apply` deliberately not yet run (real, state-changing
+action against physical infra — needs explicit go-ahead, see below).
 
 **Description:**
 VM resources for cp-1/wk-1/wk-2, cloned from the PX-003 template, with
 per-VM cloud-init config (hostname, static IP, SSH key) and sizing per
 `docs/SPEC.md` §3 resource budget.
 
+**Implementation notes (2026-07-30):** `terraform/vms.tf` — one
+`proxmox_virtual_environment_vm` resource with `for_each` over a
+`locals.nodes` map (cp-1/wk-1/wk-2 differ only in vm_id/IP/sizing, so
+generated rather than copy-pasted). VMID scheme mirrors the static IP's
+last octet (110/111/112 ↔ .10/.11/.12) for easy correlation. `vga`/
+`serial_device` blocks explicitly pinned to match the PX-003 template's
+headless serial-console config (`vga: serial0` / `serial0: socket` in
+`qm config 9000`), since the provider's own default (`vga.type = "std"`)
+would otherwise silently drift it. Full clone (`clone.full = true`), not
+linked — simpler failure mode for a lab, no shared dependency on the
+template disk surviving. Node name (`pve`) confirmed live via
+`pvesh get /nodes`, not assumed.
+
+`terraform plan` against the real host: 3 to add, 0 to change, 0 to
+destroy — sizing/IPs/VMIDs all match SPEC.md exactly.
+
 **Acceptance criteria:**
 - [ ] `terraform apply` produces 3 VMs matching the SPEC.md sizing table
+      — blocked on explicit go-ahead + the router DHCP/static-lease
+      spot-check for `.10`-`.12` (flagged in docs/SPEC.md §4, not yet
+      confirmed done)
 - [ ] All 3 VMs are SSH-reachable at their planned static IPs with no
       manual intervention after `apply`
 
