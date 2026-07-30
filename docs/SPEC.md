@@ -77,7 +77,7 @@ This section exists so every line item below has a one-breath answer to "why thi
 
 ## 3. Resource budget
 
-Host: 30GB RAM total, AMD Ryzen 5 5600H (6 cores / 12 threads), no GPU. The existing Prometheus/Grafana VM already consumes some of this — **confirm actual free capacity with `free -h` and `qm list` on the host before finalizing sizes below**; these are planning defaults, not yet verified against the live host.
+Host: AMD Ryzen 5 5600H (6 cores / 12 threads), no GPU. **Confirmed live 2026-07-30** via `free -h`/`qm list`/`pvesm status`/`ip a` on the actual host: 27Gi RAM total, 25Gi free, zero existing VMs (the existing Prometheus/Grafana instance turns out to live on a different physical machine, not this Proxmox host — the original assumption that it shares this host's RAM was wrong). `local-lvm` active with ~793GiB free. `vmbr0` up, carries `192.168.10.50/24`. Sizing below is unchanged (it already fit comfortably even under the old, more conservative 30GB/shared-host assumption) but is now confirmed against real numbers rather than planning defaults.
 
 | VM | vCPU | RAM | Disk | Role |
 |---|---|---|---|---|
@@ -86,7 +86,7 @@ Host: 30GB RAM total, AMD Ryzen 5 5600H (6 cores / 12 threads), no GPU. The exis
 | wk-2 | 3 | 8 GB | 60 GB | Jenkins (controller + ephemeral build agents), kube-state-metrics, node-exporter |
 | **Total** | **8 vCPU** | **20 GB** | **160 GB** | |
 
-That leaves ~10GB of host RAM headroom for Proxmox itself, the existing Prometheus/Grafana VM, and burst capacity. 8 allocated vCPUs against 12 physical threads is comfortable over-provisioning for a lab workload where all three VMs peaking simultaneously is unlikely — Jenkins builds (the spikiest load) run on wk-2, isolated from wk-1's always-on services.
+That leaves ~5GB of host RAM headroom (25Gi free minus the 20GB allocated above) for Proxmox itself and burst capacity — tighter than originally assumed, but still workable, and there's no other VM on this host competing for it. 8 allocated vCPUs against 12 physical threads is comfortable over-provisioning for a lab workload where all three VMs peaking simultaneously is unlikely — Jenkins builds (the spikiest load) run on wk-2, isolated from wk-1's always-on services.
 
 Jenkins is explicitly called out as the heaviest *single component* (JVM baseline is non-trivial even idle) — hence its own worker rather than sharing with Postgres/Redis.
 
