@@ -199,6 +199,27 @@ Terraform/Ansible-aware CI jobs the template itself has no opinion on).
 
 ---
 
+## PX-012 — Interview walkthrough doc
+
+**Status:** DONE
+
+**Description:**
+`docs/INTERVIEW_WALKTHROUGH.md` — a step-by-step, interview-rehearsal
+narrative of the full build plan (why each tool was chosen, in what
+order, what "done" means at each step), distilled from `docs/PRD.md` and
+`docs/SPEC.md`. Study aid, not a spec — `SPEC.md` remains the
+authoritative architecture doc; this restates it in defend-under-
+questioning form.
+
+**Acceptance criteria:**
+- [x] Covers every build-order step (PX-003 through the ArgoCD retrofit)
+      with a "why this, not X" answer for each major tool choice
+- [x] Covers the documented non-goals (no HA control-plane, no Vault,
+      single Proxmox host, no DB DR)
+- [x] Ends with an accurate "where things stand right now" section
+
+---
+
 ## Jenkins, landing page, GitOps (not yet ticketed in detail)
 
 Per `docs/SPEC.md` build order §7, Phases 6–8 (Jenkins, landing page,
@@ -232,3 +253,4 @@ at the time.
 | PX-009 | Core services (ingress/Redis/Postgres/Sealed Secrets) | OPEN |
 | PX-010 | Observability extension | OPEN |
 | PX-011 | Reconcile scaffold against real project-template | DONE |
+| PX-012 | Interview walkthrough doc | DONE |
