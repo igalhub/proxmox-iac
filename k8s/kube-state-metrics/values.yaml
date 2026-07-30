@@ -1,0 +1,13 @@
+# wk-2 per docs/SPEC.md's role split (§1) — grouped with Jenkins,
+# neither is an always-on data-path service like Postgres/Redis/ingress.
+nodeSelector:
+  kubernetes.io/hostname: wk-2
+
+resources:
+  requests:
+    cpu: 20m
+    memory: 32Mi
+  limits:
+    memory: 64Mi
+
+prometheusScrape: true

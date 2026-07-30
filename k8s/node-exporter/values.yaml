@@ -1,0 +1,19 @@
+# DaemonSet, runs on all 3 nodes per docs/SPEC.md — per-node hardware
+# metrics need every node covered, including cp-1. Explicit toleration
+# for the control-plane taint (see ansible/roles/k3s-server, PX-008
+# correction) rather than relying implicitly on the chart's generic
+# "tolerate any NoSchedule taint" default — node-exporter is supposed
+# to run everywhere; app workloads are what the taint should keep off
+# cp-1, and that distinction should be visible here, not just inherited.
+tolerations:
+  - key: node-role.kubernetes.io/control-plane
+    operator: Equal
+    value: "true"
+    effect: NoSchedule
+
+resources:
+  requests:
+    cpu: 10m
+    memory: 16Mi
+  limits:
+    memory: 32Mi

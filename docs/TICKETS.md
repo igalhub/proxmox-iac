@@ -366,6 +366,42 @@ code:**
    the static file) confirms `passwordauthentication no` and
    `permitrootlogin no` on all 3 hosts directly.
 
+**Correction (2026-07-31, found during PX-010):** `docs/SPEC.md` §1
+claims cp-1 is "tainted `node-role.kubernetes.io/control-plane:NoSchedule`,
+the k3s default" — that's wrong. k3s does **not** apply this taint by
+default; it only exists if `--node-taint` is explicitly passed at
+install time, and this role's `INSTALL_K3S_EXEC` never included it. The
+gap was invisible until PX-010, because everything scheduled so far
+(PX-009's core services) was already explicitly pinned to `wk-1`/`wk-2`
+via `nodeSelector` — nothing had actually tried to land on cp-1 to
+expose the missing enforcement. Caught by checking `kubectl describe
+node cp-1` for real instead of trusting the SPEC's claim.
+
+Two fixes applied, not one — a live `kubectl taint` alone would have
+silently disappeared on any future rebuild of cp-1 (VM destroyed and
+recreated, k3s reinstalled fresh), reproducing the exact same
+undocumented-drift problem:
+1. **Immediate/live:** `kubectl taint nodes cp-1
+   node-role.kubernetes.io/control-plane=true:NoSchedule` — reversible,
+   applied directly against the running cluster.
+2. **Root cause:** `ansible/roles/k3s-server/tasks/main.yml`'s
+   `INSTALL_K3S_EXEC` now includes `--node-taint
+   node-role.kubernetes.io/control-plane=true:NoSchedule`, so a future
+   rebuild applies it automatically at install time — the drift can't
+   recur silently.
+
+Verified, not assumed: re-ran `ansible-playbook site.yml --limit cp-1`
+after the role change — `failed=0`, and the install task itself reports
+`ok` (not `changed`), correctly skipped via its `creates:` guard since
+k3s is already installed on this VM. `kubectl describe node cp-1`
+confirms exactly one taint, unchanged, no duplicate/conflicting taint
+introduced by the idempotent re-run. `k8s/node-exporter/values.yaml`
+(PX-010) given an explicit toleration for this taint rather than
+relying implicitly on the chart's generic "tolerate any NoSchedule"
+default — node-exporter is supposed to run everywhere, including the
+control-plane; only app workloads should be kept off it, and that
+distinction is now visible in the values file, not just inherited.
+
 **Acceptance criteria:**
 - [x] `ansible-lint` passes on the updated roles at the `production`
       profile
@@ -443,7 +479,7 @@ a one-line CR change. Full reasoning in `k8s/README.md`.
 
 ## PX-010 — Observability (in-cluster Prometheus + Grafana)
 
-**Status:** OPEN
+**Status:** DONE
 
 **Scope correction (2026-07-30):** originally planned to extend an
 existing home-lab Prometheus/Grafana instance. During PM review, that
@@ -472,12 +508,47 @@ choosing between a full `kube-prometheus-stack` (bundles Alertmanager +
 extra exporters, likely more than needed) vs. slimmer standalone
 Prometheus + Grafana charts — don't assume either fits, verify.
 
+**Implementation notes (2026-07-31):** kube-state-metrics pinned `wk-2`
+(grouped with Jenkins, per SPEC role split); node-exporter DaemonSet
+across all 3 nodes with an explicit toleration for the control-plane
+taint (see PX-008 correction above — that taint didn't actually exist
+until this ticket surfaced the gap). Standalone `prometheus`/`grafana`
+charts, not `kube-prometheus-stack` — the standalone `prometheus` chart
+bundles kube-state-metrics/node-exporter as subcharts by default,
+disabled to avoid duplicating the separately-placed releases;
+Alertmanager and pushgateway also disabled. Grafana's admin password is
+a real sealed secret (`k8s/grafana/grafana-admin-sealedsecret.yaml`),
+same pattern as PX-009's Redis password. Two community dashboards
+provisioned via `gnetId`: Node Exporter Full (1860) + Kubernetes cluster
+monitoring via Prometheus (315), covering node and pod health
+respectively. Full commands/rationale in `k8s/README.md`.
+
+**Verified for real, not from Helm's `--wait`/exit code:**
+- Prometheus targets: queried its real `/api/v1/targets` — all 3
+  `kubernetes-nodes`/`kubernetes-nodes-cadvisor` targets `up`, both
+  node-exporter and kube-state-metrics `kubernetes-service-endpoints`
+  targets `up`.
+- Grafana reachable via the actual ingress path: `curl` with a
+  `Host: grafana.lab.test` header through the real NodePort →
+  `/api/health` returns `"database": "ok"`.
+- Both dashboards genuinely imported: queried `/api/search?type=dash-db`
+  through the same ingress path, confirmed both titles present.
+- Data actually flows end to end, not just "installed": queried
+  Grafana's own datasource proxy (`/api/datasources/proxy/uid/.../query`)
+  for `up` — real live results for all 3 nodes across
+  `kubernetes-nodes`/`cadvisor`/node-exporter/kube-state-metrics jobs,
+  every one reporting `1`.
+- Memory footprint checked post-deploy per the sizing note, not
+  skipped: `free -h` on wk-1 before this ticket showed 7.0Gi available;
+  after Prometheus + Grafana + node-exporter, 6.6Gi available — a
+  comfortable, confirmed fit, not assumed.
+
 **Acceptance criteria:**
-- [ ] In-cluster Prometheus deployed via Helm, scraping kube-state-metrics
+- [x] In-cluster Prometheus deployed via Helm, scraping kube-state-metrics
       + node-exporter directly (no external scrape-config needed now)
-- [ ] In-cluster Grafana deployed via Helm, reachable via nginx-ingress
-- [ ] Grafana dashboard renders live node/pod health data for all 3 nodes
-- [ ] Actual memory footprint on wk-1 checked post-deploy against the
+- [x] In-cluster Grafana deployed via Helm, reachable via nginx-ingress
+- [x] Grafana dashboard renders live node/pod health data for all 3 nodes
+- [x] Actual memory footprint on wk-1 checked post-deploy against the
       sizing note above, documented in this ticket either way
 
 ---
@@ -561,6 +632,6 @@ at the time.
 | PX-007 | Ansible inventory + roles skeleton | DONE |
 | PX-008 | k3s cluster bring-up | DONE |
 | PX-009 | Core services (ingress/Redis/Postgres/Sealed Secrets) | DONE |
-| PX-010 | Observability (in-cluster Prometheus + Grafana) | OPEN |
+| PX-010 | Observability (in-cluster Prometheus + Grafana) | DONE |
 | PX-011 | Reconcile scaffold against real project-template | DONE |
 | PX-012 | Interview walkthrough doc | DONE |
