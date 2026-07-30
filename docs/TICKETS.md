@@ -84,17 +84,33 @@ carried forward from a prior session's say-so.
 
 ## PX-004 — Terraform module skeleton
 
-**Status:** OPEN
+**Status:** DONE
 
 **Description:**
 `terraform/` with `providers.tf` (bpg/proxmox), `variables.tf`,
 `outputs.tf`. No VM resources yet — just the module wired up and
 authenticating against the Proxmox API.
 
+**Proxmox-side setup (2026-07-30):** dedicated `terraform@pve` user, custom
+`Terraform` role scoped to clone/configure privileges only (`Sys.Audit`,
+`Datastore.Audit`, `Datastore.AllocateSpace`, `VM.Audit`, `VM.Allocate`,
+`VM.Clone`, `VM.Config.CPU/Memory/Disk/Network/Cloudinit/Options/CDROM`,
+`VM.PowerMgmt`, `VM.GuestAgent.Unrestricted`) bound at path `/`, API token
+`terraform-iac` (Privilege Separation off). `VM.Monitor` — present in
+bpg/proxmox's example role — confirmed **absent entirely** from PVE 9.2's
+role privilege list (not renamed, not findable under any filter), matching
+the provider docs' own warning that available privileges changed in PVE
+9.0. Omitted; not required for a clone/configure-only workflow (it gates
+QEMU monitor/console access). Revisit only if a later phase needs console
+access.
+
 **Acceptance criteria:**
-- [ ] `terraform init` succeeds
-- [ ] `terraform plan` runs cleanly against the real Proxmox host with zero
-      resources defined yet (proves API auth works before adding VMs)
+- [x] `terraform init` succeeds (bpg/proxmox v0.111.1 installed cleanly)
+- [x] `terraform plan` runs cleanly against the real Proxmox host with zero
+      resources defined yet (proves API auth works before adding VMs) —
+      QA-verified 2026-07-30: `terraform plan` against `192.168.10.50`
+      returned "No changes. Your infrastructure matches the
+      configuration." with the real `terraform@pve!terraform-iac` token
 
 ---
 
@@ -269,7 +285,7 @@ at the time.
 | PX-001 | Repo scaffold | DONE |
 | PX-002 | CI + lint tooling | DONE |
 | PX-003 | Cloud-init template on Proxmox | DONE |
-| PX-004 | Terraform module skeleton | OPEN |
+| PX-004 | Terraform module skeleton | DONE |
 | PX-005 | Terraform VM resource definitions | OPEN |
 | PX-006 | Terraform state decision | OPEN |
 | PX-007 | Ansible inventory + roles skeleton | OPEN |

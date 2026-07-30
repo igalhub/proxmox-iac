@@ -35,6 +35,7 @@ jobs:
       - name: Check for Terraform config
         id: check
         run: |
+          shopt -s globstar nullglob
           if [ -d terraform ] && compgen -G "terraform/**/*.tf" > /dev/null; then
             echo "present=true" >> "$GITHUB_OUTPUT"
           else
@@ -64,6 +65,7 @@ jobs:
       - name: Check for Ansible content
         id: check
         run: |
+          shopt -s globstar nullglob
           if [ -d ansible ] && compgen -G "ansible/**/*.yml" > /dev/null; then
             echo "present=true" >> "$GITHUB_OUTPUT"
           else
