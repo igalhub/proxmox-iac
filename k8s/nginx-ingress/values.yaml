@@ -1,0 +1,13 @@
+# wk-1 hosts the ingress controller per docs/SPEC.md's role split (§1) —
+# isolated from wk-2's Jenkins builds, the spikiest load in the cluster.
+controller:
+  nodeSelector:
+    kubernetes.io/hostname: wk-1
+  service:
+    type: NodePort
+  resources:
+    requests:
+      cpu: 50m
+      memory: 90Mi
+    limits:
+      memory: 180Mi

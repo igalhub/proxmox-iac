@@ -1,0 +1,32 @@
+# Primary + replica, per docs/SPEC.md — a straightforward Helm-deployed
+# cache, deliberately not operator-managed (see SPEC.md's rationale).
+architecture: replication
+
+auth:
+  existingSecret: redis-auth
+  existingSecretPasswordKey: redis-password
+
+master:
+  nodeSelector:
+    kubernetes.io/hostname: wk-1
+  persistence:
+    size: 1Gi
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      memory: 128Mi
+
+replica:
+  replicaCount: 1
+  nodeSelector:
+    kubernetes.io/hostname: wk-1
+  persistence:
+    size: 1Gi
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      memory: 128Mi

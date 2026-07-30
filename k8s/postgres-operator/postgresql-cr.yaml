@@ -1,0 +1,39 @@
+# Single instance, not the 2-node example from docs/SPEC.md's operator
+# rationale — deliberate trade-off against the host's resource budget
+# (docs/SPEC.md §3). The operator pattern (Patroni-managed instances,
+# CR-driven user/db provisioning, leader election machinery) applies
+# identically at N=1; scaling to HA is a numberOfInstances change, not
+# an architecture change — that's the actual interview answer here.
+apiVersion: "acid.zalan.do/v1"
+kind: postgresql
+metadata:
+  name: proxmox-iac-pg
+  namespace: postgres
+spec:
+  teamId: "acid"
+  numberOfInstances: 1
+  postgresql:
+    version: "18"
+  volume:
+    size: 2Gi
+    storageClass: local-path
+  users:
+    app_user:
+      - createdb
+  databases:
+    app_db: app_user
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
+  nodeAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+                - wk-1
