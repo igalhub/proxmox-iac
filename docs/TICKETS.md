@@ -306,13 +306,49 @@ instead of relying on user lookup.
 
 ## PX-008 — k3s cluster bring-up
 
-**Status:** OPEN
+**Status:** IN PROGRESS — roles written, lint/syntax-verified; the real
+`ansible-playbook` run (no `--check`) deliberately not executed yet,
+same gate as `terraform apply` (see below).
 
 **Description:**
 k3s-server role installs on cp-1 with `--disable=traefik`, captures join
 token; k3s-agent role installs on wk-1/wk-2 and joins using that token.
 
+**Implementation notes (2026-07-30):** `k3s-server` uses the official
+`get.k3s.io` install script with `INSTALL_K3S_EXEC=server
+--disable=traefik --write-kubeconfig-mode=644`, waits for the real
+node-token file, reads and `set_fact`s it, then fetches the kubeconfig
+locally (`.kubeconfig`, gitignored — real cluster admin credential,
+never committed) and patches its server address from `127.0.0.1` to the
+control-plane's real IP. `k3s-agent` reads the token via `hostvars` from
+the control-plane host (facts persist across plays within one
+`ansible-playbook` run — `k3s-server` always runs before `k3s-agent` in
+`site.yml`'s play order) and joins with `INSTALL_K3S_EXEC=agent`.
+
+**Why `--check` can't fully verify this ticket, unlike PX-007's `common`
+role:** the task chain has a genuine, inherent dependency on real side
+effects — `slurp`ing the node-token file requires the file to actually
+exist, which only happens after a real (non-simulated) install runs.
+Confirmed by actually running `--check`: it correctly got through the
+install-script tasks (simulated as `changed`), then failed for real at
+`slurp` with "File not found" — not a bug, the expected shape of this
+limitation. `ansible-playbook --syntax-check` (validates YAML/module
+resolution, no host connection needed) is the correct pre-flight bar
+here instead, and passes clean. This is exactly the "some things
+genuinely can't be verified outside the real environment" case, not a
+gap to paper over.
+
+**Deliberately NOT run for real yet:** this is also where PX-007's SSH
+hardening tasks (disable password auth, disable root login) run for the
+first time for real, alongside the actual k3s install across all 3
+VMs — a real, state-changing action against every layer this project
+depends on (SSH access + the cluster itself), gated behind explicit
+confirmation the same way `terraform apply` was.
+
 **Acceptance criteria:**
+- [x] `ansible-lint` passes on the updated roles at the `production`
+      profile
+- [x] `ansible-playbook --syntax-check` passes clean
 - [ ] `kubectl get nodes` (run from cp-1 or with kubeconfig pulled locally)
       shows 3 Ready nodes
 - [ ] End-to-end: clean `terraform apply` + `ansible-playbook` run produces

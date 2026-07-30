@@ -1,1 +1,2 @@
 ---
+k3s_kubeconfig_local_path: "{{ playbook_dir }}/../.kubeconfig"

@@ -2,7 +2,7 @@
 galaxy_info:
   role_name: k3s_agent
   author: proxmox-iac
-  description: k3s worker install/join (stub — real logic in PX-008)
+  description: k3s worker install and cluster join
   license: MIT
   min_ansible_version: "2.15"
   platforms:

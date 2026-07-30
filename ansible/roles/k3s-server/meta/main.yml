@@ -2,7 +2,7 @@
 galaxy_info:
   role_name: k3s_server
   author: proxmox-iac
-  description: k3s control-plane install (stub — real logic in PX-008)
+  description: k3s control-plane install (--disable=traefik, node-token capture)
   license: MIT
   min_ansible_version: "2.15"
   platforms:

@@ -1,6 +1,18 @@
 ---
-# Real k3s agent install/join (using the server's join token) lands in
-# PX-008 — see docs/SPEC.md §7 build order. This is a structural stub only.
-- name: K3s-agent role placeholder
-  ansible.builtin.debug:
-    msg: "k3s-agent install/join implemented in PX-008"
+- name: Download k3s install script
+  ansible.builtin.get_url:
+    url: https://get.k3s.io
+    dest: /tmp/k3s-install.sh
+    mode: "0755"
+
+# K3S_URL/K3S_TOKEN come from the control-plane host's facts, set by the
+# k3s-server role earlier in the same playbook run (see site.yml play
+# order — k3s-server always runs before k3s-agent).
+- name: Install k3s agent (worker) and join the cluster
+  ansible.builtin.command: /tmp/k3s-install.sh
+  args:
+    creates: /usr/local/bin/k3s-agent
+  environment:
+    INSTALL_K3S_EXEC: "agent"
+    K3S_URL: "https://{{ hostvars[groups['k3s_control_plane'][0]]['ansible_host'] }}:6443"
+    K3S_TOKEN: "{{ hostvars[groups['k3s_control_plane'][0]]['k3s_node_token'] }}"
