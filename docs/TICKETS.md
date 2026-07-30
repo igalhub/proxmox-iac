@@ -737,13 +737,21 @@ Branching discipline resumed for the rest of this ticket's work.
       lint (`helm lint` against each chart's values under `k8s/`)
 - [x] Jenkins Kubernetes plugin configured with a pod template for
       dynamic build agents, pinned to `wk-2`
-- [ ] A real pipeline run completes successfully (all stages green),
-      triggered by a real push to this repo via SCM polling — not a
-      manually-triggered build, not "the UI loads" — **pending: job not
-      yet created in Jenkins, no real poll-triggered run yet**
-- [ ] Build agent pod confirmed ephemeral — created for the run, torn
-      down after, verified via `kubectl get pods` during and after a
-      real run
+- [x] A manually-triggered pipeline run completes successfully, all 3
+      stages green — verified via console log: 9/9 charts linted (after
+      the sealed-secrets fix above), `ansible-lint` passes at the
+      `production` profile, zero `ERROR` lines, `Finished: SUCCESS`.
+      `job/proxmox-iac-ci/config.xml` confirms the `pollSCM('H/5 * * * *')`
+      trigger from the Jenkinsfile is genuinely registered
+      (`hudson.triggers.SCMTrigger`, `spec: H/5 * * * *`) — **the actual
+      SCM-poll-triggered run (not manual) is still pending**: this very
+      commit is the real push it needs to detect. Will verify the
+      resulting build's cause via the API (`Cause$SCMTriggerCause`, not
+      `UserIdCause`) in a follow-up commit once observed, not assumed.
+- [x] Build agent pod confirmed ephemeral — observed directly via
+      `kubectl get pods` during builds #3-#5: a `proxmox-iac-ci-N-...`
+      pod appears mid-build (4/4 containers Running) and is gone by the
+      time the build finishes, every time, without manual cleanup
 
 ---
 
