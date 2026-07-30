@@ -601,11 +601,71 @@ questioning form.
 
 ---
 
-## Jenkins, landing page, GitOps (not yet ticketed in detail)
+## PX-013 — Jenkins CI (Helm) with a real pipeline
 
-Per `docs/SPEC.md` build order §7, Phases 6–8 (Jenkins, landing page,
-ArgoCD retrofit) will get their own PX-0NN tickets written just before
-each phase starts, same as PX-004 through PX-010 — not written far in
+**Status:** OPEN
+
+**Description:**
+Jenkins deployed via its official Helm chart on `wk-2` — grouped with
+kube-state-metrics/node-exporter per `docs/SPEC.md`'s role split,
+isolated from `wk-1`'s always-on data services (Postgres/Redis/ingress).
+Given real work per `docs/PRD.md`: a `Jenkinsfile` pipeline that runs
+`terraform validate`, `ansible-lint`, and a Helm chart lint on every
+push to this repo — not a decorative idle pod.
+
+**Resource sizing (2026-08-01):** confirmed live via `free -h` on `wk-2`
+before sizing anything, not assumed — **7.1Gi available** (of 7.8Gi
+total), only ~689Mi currently used by kube-state-metrics + node-exporter
+combined. `docs/SPEC.md` has called Jenkins "the heaviest single
+component" since the original spec was written, and PX-010 already
+showed the project's remaining RAM headroom is tighter than the
+original planning numbers assumed — so sized modestly here anyway,
+rather than leaning on the comfortable headroom: this pipeline's actual
+workload is lint/validate, not compilation or a heavy build. Controller:
+requests `512Mi`/`250m`, limit `1Gi`/`500m`. Dynamic agent pod template:
+requests `256Mi`/`100m`, limit `512Mi`/`250m`.
+
+**Build-agent strategy — decided, not left open** (`docs/SPEC.md` §8
+previously listed this as unresolved): **dynamic Kubernetes pod agents**
+via the Jenkins Kubernetes plugin, not a static agent. Rationale:
+matches this project's "provisioned as code" ethos (no manually
+maintained agent to patch or keep running), scales to zero between
+builds (no baseline RAM cost sitting idle against the tight remaining
+budget), and is the pattern most real orgs actually use for
+Kubernetes-hosted Jenkins today. Agent pod template pinned to `wk-2` via
+`nodeSelector`, same as the controller.
+
+**Pipeline trigger mechanism — decided:** SCM polling (`pollSCM`), not a
+GitHub webhook. This cluster has no public ingress exposed to GitHub
+(nginx-ingress is only reachable inside the home LAN) — GitHub can't
+deliver a webhook here without a reverse tunnel/public endpoint, which
+is out of scope for this ticket. Polling is slower than a webhook, but
+it's a real, working trigger against a real push, which is what the
+acceptance criteria below actually require — not a simulated or
+manually-triggered run standing in for one.
+
+**Acceptance criteria:**
+- [ ] Jenkins reachable via nginx-ingress — necessary, not sufficient
+      on its own; does not close this ticket by itself
+- [ ] `Jenkinsfile` committed to this repo defining a pipeline with
+      stages for `terraform validate`, `ansible-lint`, and a Helm chart
+      lint (`helm lint` against each chart's values under `k8s/`)
+- [ ] Jenkins Kubernetes plugin configured with a pod template for
+      dynamic build agents, pinned to `wk-2`
+- [ ] A real pipeline run completes successfully (all stages green),
+      triggered by a real push to this repo via SCM polling — not a
+      manually-triggered build, not "the UI loads"
+- [ ] Build agent pod confirmed ephemeral — created for the run, torn
+      down after, verified via `kubectl get pods` during and after a
+      real run
+
+---
+
+## Landing page, GitOps (not yet ticketed in detail)
+
+Per `docs/SPEC.md` build order §7, Phases 7–8 (landing page, ArgoCD
+retrofit) will get their own PX-0NN tickets written just before each
+phase starts, same as PX-004 through PX-013 — not written far in
 advance of the work, so acceptance criteria reflect what's actually known
 at the time.
 
@@ -635,3 +695,4 @@ at the time.
 | PX-010 | Observability (in-cluster Prometheus + Grafana) | DONE |
 | PX-011 | Reconcile scaffold against real project-template | DONE |
 | PX-012 | Interview walkthrough doc | DONE |
+| PX-013 | Jenkins CI (Helm) with a real pipeline | OPEN |
