@@ -20,6 +20,11 @@ crash.*.log
 *.swp
 .env
 
+# Python (landing/)
+__pycache__/
+*.pyc
+.ruff_cache/
+
 # JetBrains IDE
 .idea/
 

@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="refresh" content="{{ refresh_seconds }}">
+  <title>proxmox-iac — cluster status</title>
+  <style>
+    body { font-family: monospace; background: #0d1117; color: #c9d1d9; padding: 2rem; }
+    h1 { color: #58a6ff; }
+    .card { border: 1px solid #30363d; border-radius: 6px; padding: 1rem 1.5rem; margin-bottom: 1rem; }
+    .metric { font-size: 2rem; }
+    .label { color: #8b949e; font-size: 0.9rem; }
+    .error { color: #f85149; }
+    table { border-collapse: collapse; }
+    td { padding: 0.2rem 1rem 0.2rem 0; }
+  </style>
+</head>
+<body>
+  <h1>proxmox-iac cluster status</h1>
+
+  {% if error %}
+    <p class="error">{{ error }}</p>
+  {% endif %}
+
+  <div class="card">
+    <div class="label">Nodes ready</div>
+    <div class="metric">{{ nodes_ready }} / {{ nodes_total }}</div>
+  </div>
+
+  <div class="card">
+    <div class="label">Memory used (cluster-wide)</div>
+    <div class="metric">{{ "%.1f"|format(memory_used_pct|float) if memory_used_pct != "?" else "?" }}%</div>
+  </div>
+
+  <div class="card">
+    <div class="label">Pods by phase</div>
+    <table>
+      {% for phase, count in pods_by_phase.items() %}
+      <tr><td>{{ phase }}</td><td>{{ count }}</td></tr>
+      {% endfor %}
+    </table>
+  </div>
+
+  <p class="label">refreshes every {{ refresh_seconds }}s — data queried live from Prometheus</p>
+</body>
+</html>
