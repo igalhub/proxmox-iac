@@ -42,7 +42,7 @@ Python project (no `pre-commit` framework to hang it on).
 
 ## PX-003 — Cloud-init Ubuntu 24.04 template on Proxmox
 
-**Status:** DONE (script) / awaiting execution
+**Status:** DONE
 
 **Description:**
 `scripts/build-cloud-init-template.sh` — downloads the Ubuntu 24.04 cloud
@@ -51,10 +51,34 @@ serial console, guest agent), `qm resize`, `qm template`. Deliberately
 does not set `ciuser`/`sshkey` on the template — per-VM identity is
 Terraform's job at clone time.
 
+**Correction (2026-07-30):** this script was written in an earlier Cowork
+session but only ever saved to that session's scratch/output folder, not
+committed to the repo — `scripts/` didn't exist in git history at all.
+Status had been carried forward across sessions/docs as "delivered" without
+anyone verifying it against actual repo state. Caught when a later
+Claude Code session tried to run it for real and found nothing there.
+Now actually committed. Lesson: a file only "exists" once it's in the
+repo — a chat/session artifact isn't the same thing, and status claims in
+TICKETS.md/HANDOFF.md need to be re-verified against `git log`/`ls`, not
+carried forward from a prior session's say-so.
+
 **Acceptance criteria:**
-- [ ] Igal has run the script on `192.168.10.50`
-- [ ] Template VMID 9000 confirmed present in the Proxmox UI, marked as
-      template (not a regular VM)
+- [x] Script actually committed to `scripts/build-cloud-init-template.sh`
+- [x] Igal confirms SSH access to `192.168.10.50` — `homelab` alias
+      repointed from the destroyed `.6` VM to `.50`, `User root`, ed25519
+      key (`~/.ssh/homelab`) appended to `/root/.ssh/authorized_keys` via
+      the Proxmox web UI's node Shell. `ssh homelab` now authenticates
+      without a password prompt.
+- [x] `free -h` / `qm list` / `pvesm status` / `ip a` run on the real host
+      (2026-07-30): 27Gi RAM total, 25Gi free, zero existing VMs;
+      `local-lvm` active with ~793GiB free; `vmbr0` up, carries
+      `192.168.10.50/24`. Script's defaults (`local-lvm`, `vmbr0`, VMID
+      `9000`) all confirmed correct, no changes needed.
+- [x] Igal has run the script on `192.168.10.50`
+- [x] Template VMID 9000 confirmed present and marked as a template —
+      verified via `qm config 9000` output showing `template: 1` and the
+      disk renamed to `base-9000-disk-0` (Proxmox's own signal that a VM
+      was actually converted, not just left as a regular VM)
 
 ---
 
@@ -244,7 +268,7 @@ at the time.
 |---|---|---|
 | PX-001 | Repo scaffold | DONE |
 | PX-002 | CI + lint tooling | DONE |
-| PX-003 | Cloud-init template on Proxmox | Script DONE, execution pending |
+| PX-003 | Cloud-init template on Proxmox | DONE |
 | PX-004 | Terraform module skeleton | OPEN |
 | PX-005 | Terraform VM resource definitions | OPEN |
 | PX-006 | Terraform state decision | OPEN |
