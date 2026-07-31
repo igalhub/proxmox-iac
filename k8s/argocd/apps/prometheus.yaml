@@ -1,0 +1,38 @@
+# Adopts the existing Prometheus Helm release (installed directly via
+# `helm install` in PX-010) without a reinstall. Fourth PX-015 adoption
+# — the first with a PersistentVolumeClaim (4Gi, 7d retention): adopted
+# with extra care that the PVC's identity is preserved, not just the
+# Deployment/Service, since a name mismatch here would mean losing
+# metric history, not just a pod restart.
+#
+# Multi-source Application, same shape as kube-state-metrics/
+# node-exporter: Helm chart from its upstream repo pinned to the exact
+# version already live (29.20.0), values file stays in this repo via
+# the `ref: values` source. Release name `prometheus` matches the live
+# release, so every rendered resource name — including
+# `PersistentVolumeClaim/prometheus-server` — is identical to what's
+# already running and bound to the existing volume.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: prometheus
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://prometheus-community.github.io/helm-charts
+      chart: prometheus
+      targetRevision: 29.20.0
+      helm:
+        releaseName: prometheus
+        valueFiles:
+          - $values/k8s/prometheus/values.yaml
+    - repoURL: git@github.com:igalhub/proxmox-iac.git
+      targetRevision: master
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  # Manual sync, no auto-prune/self-heal (docs/TICKETS.md PX-015
+  # decision 3) — adoption itself happens via one explicit, reviewed
+  # sync, not automatically the moment this Application is created.
