@@ -39,3 +39,11 @@ __pycache__/
 # project content again.
 !k8s/sealed-secrets/
 !k8s/sealed-secrets/**
+
+# Same global "*secrets*" rule recurred (PX-015) for the ArgoCD
+# Application manifest that adopts the controller above — no secret
+# material here either, just an Application CR. Explicit override
+# per-file rather than widening the pattern, since future files
+# genuinely matching "*secrets*" (an actual sealed secret) should stay
+# caught by other, more specific rules if any are ever added.
+!k8s/argocd/apps/sealed-secrets.yaml
