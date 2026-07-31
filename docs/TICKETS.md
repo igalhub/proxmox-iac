@@ -2002,6 +2002,56 @@ safety net beyond PX-020's standing backup story.
 
 ---
 
+## PX-024 — Rotate the MinIO backup-admin credential
+
+**Status:** OPEN — not blocking, no urgency; low real risk (MinIO is
+internal-only, never exposed outside the cluster network), but a
+deliberate decision worth making rather than leaving unexamined.
+
+**Background:** Found during PX-022's verification, filed separately —
+same "found during verification of ticket X, filed separately as its
+own ticket" pattern as PX-018. The MinIO `backup-admin` root credential
+(created in PX-020, reused directly for WAL-G's S3 access rather than a
+dedicated least-privilege user — a stated trade-off at the time, see
+PX-020) ended up more exposed than originally scoped:
+
+- It's sitting in plaintext inside the `postgresql` CR's
+  `kubectl.kubernetes.io/last-applied-configuration` annotation, from
+  the one-time `spec.clone` bootstrap step used during PX-022's Postgres
+  migration — readable indefinitely by anyone with `get` on that
+  resource. (PX-022 already removed the `clone` block itself from the
+  live CR spec and its current annotation, but the credential was
+  present in that annotation's history for the duration of the
+  migration.)
+- It was also displayed directly in a chat transcript during this
+  session (the migration commands were reviewed inline before running),
+  which is a separate exposure surface from the cluster-internal one
+  above.
+
+**Decision to make, not just an automatic action:** whether the real
+risk here (internal-only service, no external exposure, no evidence of
+any other consumer of this credential) justifies rotation effort, or
+whether documenting the exposure and moving on is the more proportionate
+call. If rotating: generate a new MinIO root credential, update the
+sealed secrets in both `k8s/minio/minio-auth-sealedsecret.yaml` and
+`k8s/postgres-operator/postgres-backup-creds-sealedsecret.yaml` (kept in
+sync per PX-020's design — same credential, two namespaces), confirm
+WAL-G archiving/backups still work with the new credential before
+considering the old one retired.
+
+**Acceptance criteria:**
+- [ ] Explicit decision made and documented: rotate, or accept the risk
+      as-is with reasoning — not left silently unresolved
+- [ ] If rotating: both sealed secrets updated with a new credential,
+      confirmed in sync
+- [ ] If rotating: a real WAL segment and a real base backup both
+      reconfirmed landing in MinIO with the new credential, same rigor
+      as PX-020's original verification — not assumed to still work
+- [ ] `docs/TICKETS.md` PX-020 (or this ticket) notes the rotation for
+      the record
+
+---
+
 ## Ticket status
 
 | Ticket | Title | Status |
@@ -2028,3 +2078,4 @@ safety net beyond PX-020's standing backup story.
 | PX-020 | Real Postgres backup story (WAL-E/WAL-G) | DONE |
 | PX-021 | MetalLB for a real LoadBalancer IP instead of NodePort | DONE |
 | PX-022 | Longhorn distributed storage (Postgres/Redis PVs) | DONE |
+| PX-024 | Rotate the MinIO backup-admin credential | OPEN |
