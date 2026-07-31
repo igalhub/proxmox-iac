@@ -1014,7 +1014,12 @@ after Prometheus's scrape interval caught up, scaled back down after.
 
 ## PX-015 — ArgoCD retrofit
 
-**Status:** OPEN
+**Status:** DONE — closed out 2026-07-31. All 10 services adopted under
+ArgoCD, all 7 acceptance criteria verified, final post-merge sync
+against `master` confirmed all 11 Applications (root + 10 children)
+`Synced`/`Healthy` and every ingress-routed service still reachable
+through the readopted nginx-ingress controller. See PRs #35-#47 for the
+full trail.
 
 **Background:** Per `docs/SPEC.md` build order §7 item 8, everything from
 step 4 onward — nginx-ingress, Redis, Postgres (Zalando operator),
@@ -1244,6 +1249,16 @@ checked through the readopted controller post-sync —
 `jenkins.lab.test/login` (`HTTP 200`), `grafana.lab.test/api/health`
 (`HTTP 200`).
 
+**Final close-out verification (2026-07-31, after PR #47 merged):** all
+11 Applications (`root-app` + 10 children) re-synced against `master`
+directly, confirmed `Synced`/`Healthy` across the board via
+`kubectl get application -n argocd`. nginx-ingress controller pod UID
+and both NodePorts (`30963`/`31395`) confirmed unchanged one more time.
+The full ingress sweep (ArgoCD, landing page, Jenkins, Grafana) re-run
+against `master`'s actual live state, all four still `HTTP 200` —
+closing this ticket on real, re-verified evidence against the merged
+state, not just the pre-merge branch checks.
+
 One correction to decision 1's wording: the sealed secret is ArgoCD's
 real repo-credential secret shape (`Opaque`, labeled
 `argocd.argoproj.io/secret-type: repository`, keys `type`/`url`/`sshPrivateKey`),
@@ -1446,6 +1461,6 @@ and worth switching to instead of stopping at step 3 above.
 | PX-012 | Interview walkthrough doc | DONE |
 | PX-013 | Jenkins CI (Helm) with a real pipeline | DONE |
 | PX-014 | Landing page (live Prometheus metrics, real app) | DONE |
-| PX-015 | ArgoCD retrofit | OPEN |
+| PX-015 | ArgoCD retrofit | DONE |
 | PX-016 | Resolve Proxmox memory-gauge inaccuracy (wk-1/wk-2) | OPEN |
 | PX-017 | Narrow ghcr.io push token scope once repo is public | OPEN |
