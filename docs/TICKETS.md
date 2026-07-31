@@ -1605,7 +1605,79 @@ live cluster interaction at all.
 
 ## PX-020 — Real Postgres backup story (WAL-E/WAL-G) via the Zalando operator
 
-**Status:** OPEN
+**Status:** DONE — closed out 2026-08-01 (PR pending merge). Full
+architecture, retention, and stated RPO documented in `docs/SPEC.md` §7.
+
+**Verification, real evidence not assumed:**
+
+- **Backup target:** in-cluster MinIO (`k8s/minio/`), pinned to `wk-2` —
+  deliberately not `wk-1` (where Postgres runs), so a `wk-1` disk failure
+  can't destroy both the live data and its only backup. Confirmed real
+  headroom before deploying: `wk-2` had ~50GB disk free, ~6.4GB RAM
+  available at the time.
+- **Real platform issue #1, hit and fixed:** the Bitnami `minio` chart's
+  images (`docker.io/bitnami/minio`) don't resolve at all — Broadcom
+  moved Bitnami's free-tier images behind a paid registry mid-2025,
+  confirmed directly (`ImagePullBackOff`, then a live Docker Hub API
+  check returning zero tags). Switched to the official `minio/minio`
+  chart (`quay.io/minio` images, unaffected). The old Bitnami
+  `Deployment`'s `spec.selector` being immutable also blocked an in-place
+  chart swap — deleted the (empty, zero-data) Deployment once and
+  re-synced clean.
+- **WAL-G continuous archiving:** configured via `spec.env` directly on
+  `k8s/postgres-operator/postgresql-cr.yaml` (not a separate operator
+  ConfigMap) — Spilo auto-set `archive_command` to
+  `envdir "/run/etc/wal-e.d/env" wal-g wal-push "%p"` once the env vars
+  landed, confirmed via `SHOW archive_command`. A forced `pg_switch_wal()`
+  + `CHECKPOINT` produced a real WAL segment
+  (`00000006000000000000003F.lz4`) confirmed via `mc ls` directly against
+  MinIO — not `pg_stat_archiver` alone, and not operator/pod logs.
+- **Real platform issue #2, hit and fixed:** every WAL push and base
+  backup initially failed with `"Server side encryption specified but
+  KMS is not configured"` — Spilo defaults `WALG_S3_SSE` to `AES256`
+  whenever WAL-G is enabled, assuming a real S3 with SSE-S3/KMS. This
+  MinIO has none. An empty `WALG_S3_SSE` value did **not** fix it
+  (Spilo's `configure_spilo.py` treats any falsy value as "use the
+  AES256 default") — found the actual dedicated flag,
+  `WALG_DISABLE_S3_SSE=true`, by reading `configure_spilo.py` directly
+  inside the running pod rather than guessing further. Fixed for real:
+  re-tested WAL push and base backup both succeeded cleanly afterward.
+- **Base backup:** triggered directly via Spilo's own script
+  (`envdir "/run/etc/wal-e.d/env" /scripts/postgres_backup.sh` — the
+  exact invocation the `BACKUP_SCHEDULE` cron uses internally), completed
+  successfully (`base_000000060000000000000043`), confirmed via `mc ls`
+  directly against MinIO — full `tar_partitions/` + a `backup_stop_sentinel.json`
+  present, not assumed from the trigger command's exit code.
+- **Restore, the step that actually matters:** seeded a real marker row
+  in `app_db` on the *live* cluster, recorded its checksum
+  (`04adfd945b63ec988bbc2d4dfc14cc13`). Used the operator's native
+  `spec.clone` mechanism (`s3_wal_path`/`s3_endpoint`/credentials) to
+  restore into a throwaway `postgresql` CR (`px020-restore-test`, applied
+  directly, never committed to git) — confirmed via its own pod logs that
+  it genuinely restored from the real base backup
+  (`wal-g backup-fetch ... base_000000060000000000000043`), not a fresh
+  empty bootstrap. Queried the restored scratch cluster: same marker row,
+  same checksum, byte-for-byte identical. Scratch `postgresql` CR and its
+  PVC deleted immediately after (operator auto-deleted the PVC; confirmed
+  via `kubectl get pvc`, not assumed).
+- **A stale-status anomaly caught and explained, not ignored:** after all
+  of the above, the live `proxmox-iac-pg` CR's own status briefly read
+  `UpdateFailed`. Traced it to a transient sync race during the pod's
+  mid-restart promotion window (`"cannot execute ALTER ROLE in a
+  read-only transaction"`, timestamped *before* the SSE fix even landed)
+  — confirmed the live cluster was actually healthy throughout
+  (`pg_is_in_recovery()` = false, marker data intact, 0 restarts on the
+  current pod), then forced a reconcile (`kubectl annotate` nudge) and
+  watched the status self-correct to `Running`. Documented rather than
+  silently worked around, since a stale status field on a stateful
+  service is exactly the kind of thing worth naming even when harmless.
+- **Retention/schedule:** `BACKUP_SCHEDULE="0 3 * * *"` (daily 03:00
+  UTC), `BACKUP_NUM_TO_RETAIN=3` — roughly a 3-day recovery window,
+  Spilo's own script prunes older base backups + their now-unneeded WAL
+  automatically. RPO stated honestly in `docs/SPEC.md` §7, including the
+  real caveat: `archive_timeout` isn't set, so a near-idle database could
+  see an unbounded worst-case gap between WAL shipments — named as a
+  deferred refinement, not glossed over.
 
 **Background:** `docs/PRD.md`'s non-goals section explicitly punted
 "production-grade backup/DR for the databases" to a future item — today's
@@ -1631,16 +1703,16 @@ whether a real restore gets exercised, not just a backup file's
 existence confirmed. An untested backup is not a backup.
 
 **Acceptance criteria:**
-- [ ] Backup target decided and documented
-- [ ] WAL-G continuous archiving configured via the operator, confirmed
+- [x] Backup target decided and documented — in-cluster MinIO, `wk-2`
+- [x] WAL-G continuous archiving configured via the operator, confirmed
       via a real WAL segment landing in the target
-- [ ] At least one full base backup completes, verified in the target
+- [x] At least one full base backup completes, verified in the target
       directly, not assumed from operator logs
-- [ ] A real restore exercised end to end into a throwaway/scratch
-      `postgresql` CR (not the live one) — data confirmed to match, not
-      just "restore exited 0"
-- [ ] `docs/SPEC.md` updated with the backup architecture, retention, and
-      stated RPO
+- [x] A real restore exercised end to end into a throwaway/scratch
+      `postgresql` CR (not the live one) — data confirmed to match
+      (checksum-verified), not just "restore exited 0"
+- [x] `docs/SPEC.md` updated with the backup architecture, retention, and
+      stated RPO (§7)
 
 ---
 
@@ -1759,6 +1831,6 @@ safety net beyond PX-020's standing backup story.
 | PX-017 | Narrow ghcr.io push token scope once repo is public | OPEN |
 | PX-018 | Stop relying on a personal global gitignore for `*.tfvars` | DONE |
 | PX-019 | CI Action version pinning audit | DONE |
-| PX-020 | Real Postgres backup story (WAL-E/WAL-G) | OPEN |
+| PX-020 | Real Postgres backup story (WAL-E/WAL-G) | DONE |
 | PX-021 | MetalLB for a real LoadBalancer IP instead of NodePort | OPEN |
 | PX-022 | Longhorn distributed storage (Postgres/Redis PVs) | OPEN |
