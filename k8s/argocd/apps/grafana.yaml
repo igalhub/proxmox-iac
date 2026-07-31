@@ -1,0 +1,41 @@
+# Adopts the existing Grafana Helm release (installed directly via
+# `helm install` in PX-010) without a reinstall. Fifth PX-015 adoption,
+# second with a PersistentVolumeClaim (1Gi, dashboards/settings) —
+# same PVC-identity care as Prometheus. Also has an Ingress
+# (grafana.lab.test) and references the existing
+# k8s/grafana/grafana-admin-sealedsecret.yaml via `admin.existingSecret`
+# — that SealedSecret is a standalone resource, not templated by this
+# chart, so it's left out of this Application on purpose; ArgoCD never
+# needs to manage or re-seal it, just read the Secret it decrypts into.
+#
+# Multi-source Application, same shape as the other Helm-sourced
+# adoptions: chart from its upstream repo pinned to the exact version
+# already live (10.5.15), values file stays in this repo via the
+# `ref: values` source. Release name `grafana` matches the live
+# release, so every rendered resource name — including
+# `PersistentVolumeClaim/grafana` and `Ingress/grafana` — is identical
+# to what's already running.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: grafana
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://grafana.github.io/helm-charts
+      chart: grafana
+      targetRevision: 10.5.15
+      helm:
+        releaseName: grafana
+        valueFiles:
+          - $values/k8s/grafana/values.yaml
+    - repoURL: git@github.com:igalhub/proxmox-iac.git
+      targetRevision: master
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  # Manual sync, no auto-prune/self-heal (docs/TICKETS.md PX-015
+  # decision 3) — adoption itself happens via one explicit, reviewed
+  # sync, not automatically the moment this Application is created.
