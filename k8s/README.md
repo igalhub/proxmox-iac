@@ -250,3 +250,20 @@ CRs can apply. `nginx-ingress`'s Service switched from `NodePort` to
 `192.168.10.13`, instead of a node IP + random high port. Full rationale
 and address verification: `docs/SPEC.md` §4/§8; full sync/verification
 trail: `docs/TICKETS.md` PX-021.
+
+## What's installed (PX-022)
+
+| Component | Namespace | Install |
+|---|---|---|
+| Longhorn | `longhorn-system` | ArgoCD Application (`k8s/argocd/apps/longhorn.yaml`), official chart, storage-hosting components restricted to `wk-1`/`wk-2` via a `longhorn-storage=true` node label |
+
+Another brand-new direct-through-ArgoCD install, same pattern as MinIO/
+MetalLB. The `StorageClass` itself (`numberOfReplicas: 2`) is a
+*separate* Application (`k8s/argocd/apps/longhorn-config.yaml`, raw
+manifest from `k8s/longhorn/config/`), synced only after `longhorn` is
+confirmed `Healthy` — same CRDs-before-CRs sequencing as MetalLB.
+Postgres and Redis both migrated from `local-path` to this Longhorn
+`StorageClass`, each verified via real checksum/data comparison against
+the live source before cutover. Full disk-budget numbers, replication-
+factor rationale, and migration trail: `docs/SPEC.md` §5;
+`docs/TICKETS.md` PX-022.

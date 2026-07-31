@@ -361,6 +361,41 @@ interesting answer.
 
 ---
 
+## Step 12 — Postgres backups, MetalLB, and Longhorn (PX-020/021/022, done)
+
+**What it is:** three follow-on tickets, deliberately sequenced, landing
+after the ArgoCD retrofit rather than folded into it.
+
+- **PX-020 — real Postgres backup/restore.** The Zalando operator's
+  native WAL-G integration (continuous WAL archiving + a daily base
+  backup) targeting an in-cluster MinIO, not a bolted-on `pg_dump` cron.
+  Verified end to end: a real WAL segment and base backup confirmed
+  landing in MinIO directly (`mc ls`), and a real restore exercised via
+  the operator's `spec.clone` mechanism into a throwaway CR — a marker
+  row seeded, checksummed, and confirmed byte-for-byte identical on the
+  restored cluster. Hit and fixed a real platform gotcha along the way:
+  Spilo defaults to `WALG_S3_SSE=AES256`, which breaks against a
+  KMS-less MinIO; the actual fix is the dedicated
+  `WALG_DISABLE_S3_SSE=true` flag, found by reading `configure_spilo.py`
+  inside the running pod.
+- **PX-021 — MetalLB.** Real dedicated `LoadBalancer` IP
+  (`192.168.10.13`, layer2 mode) for nginx-ingress, replacing NodePort
+  as the entry point (NodePort still works, superseded not removed).
+- **PX-022 — Longhorn.** Postgres and Redis migrated from `local-path`
+  to Longhorn (distributed, replicated block storage), deliberately
+  sequenced *after* PX-020 so a real, tested backup existed as a safety
+  net before touching the storage layer under live data. Replication
+  factor 2, justified against real disk-headroom numbers (`docs/SPEC.md`
+  §5), not assumed. Both migrations verified via checksum/functional
+  comparison before cutover, and a real ArgoCD/Helm-hooks issue (a
+  hanging `longhorn-pre-upgrade` Job) was hit and fixed along the way.
+
+**Why this order, if asked:** backup before storage migration is the
+one dependency worth naming — proving you can recover the data *before*
+moving the disk it lives on, not after.
+
+---
+
 ## Non-goals — know these cold, they preempt a certain kind of question
 
 - **No HA control-plane** — single control-plane node is an accepted,
@@ -372,8 +407,13 @@ interesting answer.
   either project's story.
 - **Single Proxmox host** — no cross-host scheduling; three VMs on one
   box.
-- **No production DR for the databases** — noted as future/stretch, not
-  solved.
+- **No full production DR for the databases** — PX-020 shipped a real,
+  tested backup/restore story (WAL-G continuous archiving + daily base
+  backups to in-cluster MinIO, verified via an actual checksum-matched
+  restore), so this is narrower than it used to be: what's still missing
+  is DR in the "another site/another cluster" sense — the backup target
+  itself lives in the same cluster as the data it protects, so a
+  whole-cluster or whole-host loss takes out both together.
 
 ---
 
@@ -388,4 +428,9 @@ cluster data. **Step 11 (ArgoCD, PX-015) is done**: ArgoCD is installed
 and all 10 existing releases (landing page, kube-state-metrics,
 node-exporter, Prometheus, Grafana, Jenkins, Postgres operator, Sealed
 Secrets, Redis, nginx-ingress) are adopted under GitOps, each verified
-without disrupting the running workload. Live status: `docs/TICKETS.md`.
+without disrupting the running workload. **Step 12 (PX-020/021/022) is
+done**: Postgres has a real, tested WAL-G backup/restore story; ingress
+reaches the cluster via a real dedicated LoadBalancer IP (MetalLB) instead
+of a NodePort; Postgres and Redis both run on Longhorn (distributed,
+replicated storage) instead of `local-path`. Live status:
+`docs/TICKETS.md`.
