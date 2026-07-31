@@ -37,3 +37,51 @@ spec:
               operator: In
               values:
                 - wk-1
+  # PX-020: WAL-G continuous archiving + base backups against the
+  # in-cluster MinIO target (k8s/minio/), Spilo's built-in mechanism —
+  # not a bolted-on pg_dump cron job. Credentials reuse MinIO's root
+  # user rather than minting a dedicated least-privilege MinIO user — a
+  # stated trade-off, not an oversight: this bucket exists for nothing
+  # but these backups, so the extra IAM-policy surface wouldn't shrink
+  # real blast radius on a single-purpose lab instance (same reasoning
+  # as PX-014's ghcr.io PAT reuse). BACKUP_SCHEDULE is UTC cron for the
+  # daily WAL-G base backup Spilo runs internally; BACKUP_NUM_TO_RETAIN
+  # caps how many base backups (plus their dependent WAL) are kept —
+  # both documented with the actual retention/RPO decision in
+  # docs/SPEC.md §7.
+  env:
+    - name: WAL_S3_BUCKET
+      value: postgres-backups
+    - name: AWS_ENDPOINT
+      value: http://minio.minio.svc.cluster.local:9000
+    - name: AWS_S3_FORCE_PATH_STYLE
+      value: "true"
+    - name: AWS_ACCESS_KEY_ID
+      valueFrom:
+        secretKeyRef:
+          name: postgres-backup-creds
+          key: AWS_ACCESS_KEY_ID
+    - name: AWS_SECRET_ACCESS_KEY
+      valueFrom:
+        secretKeyRef:
+          name: postgres-backup-creds
+          key: AWS_SECRET_ACCESS_KEY
+    - name: USE_WALG_BACKUP
+      value: "true"
+    - name: USE_WALG_RESTORE
+      value: "true"
+    - name: BACKUP_SCHEDULE
+      value: "0 3 * * *"
+    - name: BACKUP_NUM_TO_RETAIN
+      value: "3"
+    # Spilo defaults WALG_S3_SSE to AES256 whenever WAL-G is enabled,
+    # assuming a real S3 with SSE-S3/KMS support. This in-cluster MinIO
+    # has no KMS configured, so that default broke every real upload
+    # (confirmed via pod logs: "Server side encryption specified but
+    # KMS is not configured"). An empty WALG_S3_SSE value doesn't
+    # override it (Spilo's configure_spilo.py falls back to AES256 for
+    # any falsy value) — WALG_DISABLE_S3_SSE=true is the actual
+    # dedicated flag, confirmed by reading configure_spilo.py directly
+    # in the running pod rather than guessing further.
+    - name: WALG_DISABLE_S3_SSE
+      value: "true"

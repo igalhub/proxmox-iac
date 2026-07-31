@@ -7,7 +7,10 @@ Status: architecture decided 2026-07-30. Build order steps 1-8 done
 retrofit). All 10 existing releases are now managed by ArgoCD
 (app-of-apps, manual sync) rather than one-off `helm install`/
 `kubectl apply` — see `docs/TICKETS.md` PX-015 for the full adoption
-trail. Live status: `docs/TICKETS.md`.
+trail. A real, tested Postgres backup story (WAL-G to in-cluster MinIO,
+§7) landed via PX-020 — deliberately ahead of PX-022's Longhorn storage
+migration, so a verified backup exists before the storage layer
+underneath that same data gets touched. Live status: `docs/TICKETS.md`.
 
 ---
 
@@ -104,7 +107,7 @@ Jenkins is explicitly called out as the heaviest *single component* (JVM baselin
 - Planned IPs: cp-1 `.10`, wk-1 `.11`, wk-2 `.12`. **Confirmed free 2026-07-30**, checked three independent ways: (1) live ICMP ping sweep of `192.168.10.0/24`, (2) ARP table cross-check — catches devices that don't answer ping, e.g. `.3` was silent on ICMP but present in ARP, so ping-only would have missed it; only `.1` (gateway), `.2`, `.3`, `.4`, and `.50` (the Proxmox host) showed any activity, (3) the router's own DHCP client list/static-lease config directly — nothing reserved or leased at `.10`/`.11`/`.12`. All three agree.
 - **Structural fix, not just a point-in-time check:** the router's DHCP pool was originally `192.168.10.2`–`.100`, which overlapped the planned static range (and, incidentally, `.50` — the Proxmox host itself has been sitting inside the DHCP pool this whole time, unaffected so far but the same latent risk). Router had no separate address-reservation/exclusion feature, so the pool's start was narrowed to `192.168.10.21`, permanently removing `.2`–`.20` from anything DHCP can hand out. `.10`–`.12` are now structurally unreachable by DHCP, not just observed-empty at a point in time. Devices previously leased at `.2`/`.3`/`.4` will pick up a new address from `.21`–`.100` on their next natural lease renewal — expected, harmless, no action needed. Fully resolved, no longer an open item. **Update:** the same mirrored fix was also applied to `.50` — pool's end address narrowed from `.100` to `.49` (nothing else was active in `.50`–`.100`, so this displaced no other device). DHCP pool is now `192.168.10.21`–`.49`. Both the Proxmox host (`.50`) and the planned cluster (`.10`–`.12`) are structurally outside anything DHCP can ever hand out.
 - CNI: k3s default (flannel, VXLAN backend). No case for Cilium/Calico here — flannel is sufficient for a 3-node lab cluster and switching CNIs is not one of the skills gaps this project targets.
-- Ingress traffic reaches nginx-ingress via a NodePort (or MetalLB, stretch — see §7) on wk-1; DNS/hosts-file entries on Igal's machine map friendly names (`jenkins.lab`, `argocd.lab`, `status.lab`) to that node's IP.
+- Ingress traffic reaches nginx-ingress via a NodePort (or MetalLB, stretch — see §8) on wk-1; DNS/hosts-file entries on Igal's machine map friendly names (`jenkins.lab`, `argocd.lab`, `status.lab`) to that node's IP.
 
 ---
 
@@ -121,7 +124,71 @@ No Vault in this repo (that story lives in `vault-secrets-demo`). Because ArgoCD
 
 ---
 
-## 7. Build order (agreed, do not skip ahead)
+## 7. Backup & disaster recovery (Postgres)
+
+**Mechanism:** the Zalando operator's native WAL-G integration, built
+into the Spilo image (`ghcr.io/zalando/spilo-18`) — not a bolted-on
+`pg_dump` cron job. Continuous WAL archiving (`archive_command` set
+automatically by Spilo to `wal-g wal-push`) plus a daily full base
+backup, both configured via `spec.env` on `k8s/postgres-operator/postgresql-cr.yaml`
+rather than a separate operator-wide config, so the backup config lives
+and versions with the cluster it protects.
+
+**Target: in-cluster MinIO** (`k8s/minio/`), single-node/single-drive —
+chosen over an external bucket for the same reason as every other choice
+in this repo: no external dependency, no cost, one more real
+Helm-deployed component to defend under interview questioning. Deployed
+via the official `minio/minio` chart, not Bitnami's — Bitnami's free
+`docker.io/bitnami/*` images were pulled behind a paid registry
+migration mid-2025 and no longer resolve at all (confirmed directly,
+not assumed from a changelog). Pinned to `wk-2`, deliberately not `wk-1`
+where Postgres itself runs: colocating the backup target with the
+primary would mean a single `wk-1` disk failure destroys both the live
+data and its only backup, defeating the entire point of having one.
+Real headroom confirmed before deploying (`wk-2`: ~50GB disk free,
+~6.4GB RAM available at the time) — MinIO's PVC is sized at 10Gi.
+
+**A real platform gotcha hit and fixed, not glossed over:** Spilo
+defaults `WALG_S3_SSE` to `AES256` whenever WAL-G is enabled, assuming a
+real S3 endpoint with SSE-S3/KMS support. This in-cluster MinIO has no
+KMS configured, so every WAL push and base backup failed until this was
+found (via the pod's own logs: `"Server side encryption specified but
+KMS is not configured"`) and fixed with the dedicated
+`WALG_DISABLE_S3_SSE=true` env var — an empty `WALG_S3_SSE` value does
+*not* work, Spilo's `configure_spilo.py` treats any falsy value as
+"use the AES256 default."
+
+**Retention/schedule:** `BACKUP_SCHEDULE="0 3 * * *"` (daily, 03:00 UTC)
+triggers a full WAL-G base backup via Spilo's own internal cron;
+`BACKUP_NUM_TO_RETAIN=3` keeps the 3 most recent base backups (Spilo's
+`postgres_backup.sh` prunes older ones, along with their now-unneeded
+WAL, automatically on each run) — roughly a 3-day recovery window.
+Continuous WAL archiving means point-in-time recovery is possible to any
+point covered by retained WAL, not just to a base-backup boundary.
+
+**Stated RPO:** effectively continuous under real write activity — WAL
+segments ship as they fill, independent of the daily base-backup
+schedule. The honest caveat, named rather than hidden: `archive_timeout`
+is not explicitly set, so on a near-idle database a WAL segment might
+not fill (and therefore not ship) for a long stretch, meaning worst-case
+RPO is unbounded on a database with sparse writes. Not fixed in this
+pass — a future refinement (`archive_timeout: 60`-style forced periodic
+shipping) is a one-line addition, not an architecture change, and this
+lab's actual write pattern doesn't yet justify the extra archiving
+overhead.
+
+**Verified, not assumed (full trail in `docs/TICKETS.md` PX-020):** a
+real WAL segment confirmed landing in MinIO directly (`mc ls`, not
+operator logs); a real base backup triggered and confirmed the same way;
+a real restore exercised end-to-end via the operator's native
+`spec.clone` mechanism into a throwaway `postgresql` CR — a marker row
+seeded on the live cluster, checksummed, and confirmed byte-for-byte
+identical (`md5` match) on the restored scratch cluster before it was
+torn down.
+
+---
+
+## 8. Build order (agreed, do not skip ahead)
 
 1. ✅ Cloud-init Ubuntu 24.04 template on Proxmox (`qm template`).
 2. ✅ Terraform provisions cp-1/wk-1/wk-2 from that template (bpg/proxmox provider).
@@ -133,14 +200,14 @@ No Vault in this repo (that story lives in `vault-secrets-demo`). Because ArgoCD
 8. ✅ ArgoCD installed (Helm, `wk-1`, behind nginx-ingress at `argocd.lab.test`), retrofitting everything from step 4 onward under GitOps management. All 10 existing releases adopted (landing page, kube-state-metrics, node-exporter, Prometheus, Grafana, Jenkins, Postgres operator, Sealed Secrets, Redis, nginx-ingress) — none remain as one-off `helm install`s (see `docs/TICKETS.md` PX-015 for the full adoption trail, including the nginx-ingress admission-webhook risk investigation).
 9. Stretch: Longhorn, MetalLB, Jenkins pipeline coverage expanded (Sealed Secrets is already done, PX-009).
 
-## 8. Open questions / not yet decided
+## 9. Open questions / not yet decided
 
 - ~~Exact static IP assignments~~ — resolved (§4): cp-1 `.10`, wk-1 `.11`, wk-2 `.12`, confirmed free and structurally reserved outside the DHCP pool.
-- ~~MetalLB vs plain NodePort for ingress entry point~~ — resolved in practice: NodePort is what's actually running (Jenkins/Grafana both reachable via the ingress-nginx NodePort). MetalLB remains a stretch item (§7.9) if a real LoadBalancer IP is wanted later.
+- ~~MetalLB vs plain NodePort for ingress entry point~~ — resolved in practice: NodePort is what's actually running (Jenkins/Grafana both reachable via the ingress-nginx NodePort). MetalLB remains a stretch item (§8.9) if a real LoadBalancer IP is wanted later.
 - ~~Whether Jenkins build agents run as k8s pods... or a fixed agent~~ — resolved (PX-013): dynamic Kubernetes pod agents via the Jenkins Kubernetes plugin, confirmed ephemeral in practice.
 - ~~`igalhub/project-template` scaffold could not be pulled into this repo~~ — resolved (PX-011): Igal pointed at the local checkout (`~/claudecode/projects/project-template`), scaffold reconciled against it. This repo follows the template's `--lang bash` shape (shellcheck, plain git pre-commit hook, no pre-commit-framework/uv dependency) since it's Terraform/Ansible, not Python, extended with Terraform-fmt/validate and ansible-lint CI jobs the template has no opinion on. One gap remains: `.claude/dev-check.sh` couldn't be written directly into this repo (protected path in that session) — delivered separately, needs manual copy-in.
 
-## 9. Terraform state management
+## 10. Terraform state management
 
 **Decision (2026-07-30): local state file (`terraform/terraform.tfstate`), not a remote backend.** This was already the de facto choice from PX-004/PX-005 (nothing else was ever configured), but per PX-006 it's being stated as a deliberate decision with its trade-off named, not left as an unexamined default.
 
