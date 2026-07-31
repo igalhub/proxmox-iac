@@ -1,0 +1,21 @@
+# The layer2 config (IPAddressPool + L2Advertisement) for the `metallb`
+# Application above — deliberately a separate Application rather than a
+# second source on the same one, since these CRs can't apply until
+# MetalLB's own CRDs exist, and must be synced only after that
+# Application is confirmed Healthy, not simultaneously.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: metallb-config
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: git@github.com:igalhub/proxmox-iac.git
+    targetRevision: master
+    path: k8s/metallb/config
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: metallb-system
+  # Manual sync, no auto-prune/self-heal — same discipline as every
+  # other Application in this repo (docs/TICKETS.md PX-015 decision 3).

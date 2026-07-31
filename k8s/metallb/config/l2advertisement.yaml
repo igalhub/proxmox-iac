@@ -1,0 +1,10 @@
+# Advertises ingress-pool's address via layer2 (gratuitous ARP) — the
+# only mode this single flat home-lab bridge supports (docs/SPEC.md §4).
+apiVersion: metallb.io/v1beta1
+kind: L2Advertisement
+metadata:
+  name: ingress-l2
+  namespace: metallb-system
+spec:
+  ipAddressPools:
+    - ingress-pool

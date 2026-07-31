@@ -1,0 +1,31 @@
+# Layer2 mode only — the only mode that makes sense on a single flat
+# home-lab bridge (docs/SPEC.md §4); BGP mode needs router support this
+# network doesn't have. Layer2 config itself (IPAddressPool,
+# L2Advertisement) lives in k8s/metallb/config/, applied via a separate
+# ArgoCD Application (k8s/argocd/apps/metallb-config.yaml) synced after
+# this one — MetalLB's CRDs have to exist before those CRs can apply.
+#
+# speaker runs as a DaemonSet on every node by design (layer2 mode needs
+# it present cluster-wide to announce/fail over the VIP regardless of
+# which node currently holds it) — not pinned like the app-facing
+# services docs/SPEC.md §1 places explicitly. controller is a single
+# lightweight Deployment, left unpinned too — same "lightweight
+# control-plane-style component" category as Sealed Secrets/Postgres
+# Operator's own controllers, not part of the app-facing placement set.
+controller:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+
+speaker:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi

@@ -1,0 +1,35 @@
+# PX-021's LoadBalancer controller — another brand-new service installed
+# directly through ArgoCD (like MinIO in PX-020), not an adoption of a
+# pre-existing `helm install`. `syncOptions: CreateNamespace=true`
+# handles the `metallb-system` namespace declaratively.
+#
+# The actual layer2 config (IPAddressPool/L2Advertisement) is a
+# *separate* Application (metallb-config.yaml) synced after this one —
+# MetalLB's own CRDs have to exist in the cluster before those CRs can
+# be applied at all.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: metallb
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://metallb.github.io/metallb
+      chart: metallb
+      targetRevision: 0.16.1
+      helm:
+        releaseName: metallb
+        valueFiles:
+          - $values/k8s/metallb/values.yaml
+    - repoURL: git@github.com:igalhub/proxmox-iac.git
+      targetRevision: master
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: metallb-system
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+  # Manual sync, no auto-prune/self-heal — same discipline as every
+  # other Application in this repo (docs/TICKETS.md PX-015 decision 3).
