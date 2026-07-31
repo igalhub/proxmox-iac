@@ -2,12 +2,12 @@
 
 This is a living doc: update it in the same commit as any code change that alters architecture. If the code and this doc disagree, that's a bug in the doc.
 
-Status: architecture decided 2026-07-30. Build order steps 1-7 done
-(cluster, core services, observability, Jenkins, landing page). Step 8
-(ArgoCD retrofit) is in progress, scoped in detail (see PX-015's locked
-decisions) — ArgoCD installed, 3 of 10 existing releases adopted so far
-(landing page, kube-state-metrics, node-exporter). Live status:
-`docs/TICKETS.md`.
+Status: architecture decided 2026-07-30. Build order steps 1-8 done
+(cluster, core services, observability, Jenkins, landing page, ArgoCD
+retrofit). All 10 existing releases are now managed by ArgoCD
+(app-of-apps, manual sync) rather than one-off `helm install`/
+`kubectl apply` — see `docs/TICKETS.md` PX-015 for the full adoption
+trail. Live status: `docs/TICKETS.md`.
 
 ---
 
@@ -34,7 +34,9 @@ decisions) — ArgoCD installed, 3 of 10 existing releases adopted so far
   Provisioning flow:
   Terraform (bpg/proxmox provider) ──clones──> cloud-init template ──> 3 VMs
   Ansible ──configures──> users/hardening/containerd/k3s install+join ──> cluster up
-  Helm + ArgoCD ──deploys──> Redis, Postgres operator, nginx-ingress, Jenkins, landing page
+  ArgoCD (Helm-sourced Applications) ──reconciles──> Redis, Postgres operator,
+    nginx-ingress, Jenkins, Sealed Secrets, kube-state-metrics, node-exporter,
+    Prometheus, Grafana, landing page — all 10 under GitOps, manual sync
 ```
 
 Inside the cluster, workloads are split by role, not spread evenly:
@@ -128,7 +130,7 @@ No Vault in this repo (that story lives in `vault-secrets-demo`). Because ArgoCD
 5. ✅ kube-state-metrics + node-exporter added; Prometheus + Grafana deployed fresh in-cluster via Helm (revised 2026-07-30 — no existing instance to extend, see §2).
 6. ✅ Jenkins (Helm) — done once the rest is stable, since it's the heaviest single component.
 7. ✅ Landing page (in-cluster Prometheus API → live metrics), deployed behind nginx-ingress.
-8. 🚧 ArgoCD installed (Helm, `wk-1`, behind nginx-ingress at `argocd.lab.test`), retrofitting everything from step 4 onward under GitOps management. 3 of 10 existing releases migrated so far (landing page, kube-state-metrics, node-exporter) — nginx-ingress, Redis, Postgres operator, Prometheus, Grafana, Jenkins, Sealed Secrets still one-off `helm install`s, adoption ongoing (see `docs/TICKETS.md` PX-015).
+8. ✅ ArgoCD installed (Helm, `wk-1`, behind nginx-ingress at `argocd.lab.test`), retrofitting everything from step 4 onward under GitOps management. All 10 existing releases adopted (landing page, kube-state-metrics, node-exporter, Prometheus, Grafana, Jenkins, Postgres operator, Sealed Secrets, Redis, nginx-ingress) — none remain as one-off `helm install`s (see `docs/TICKETS.md` PX-015 for the full adoption trail, including the nginx-ingress admission-webhook risk investigation).
 9. Stretch: Longhorn, MetalLB, Jenkins pipeline coverage expanded (Sealed Secrets is already done, PX-009).
 
 ## 8. Open questions / not yet decided
