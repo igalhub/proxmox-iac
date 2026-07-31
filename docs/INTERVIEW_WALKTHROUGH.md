@@ -311,13 +311,18 @@ an interview.
 
 ---
 
-## Step 11 — ArgoCD retrofit (PX-015, stubbed)
+## Step 11 — ArgoCD retrofit (PX-015, in progress)
 
 **What it is:** ArgoCD watches a path in this Git repo containing
 manifests/Helm releases and continuously reconciles the live cluster to
 match what's committed. Retrofitted last — everything installed in steps
 7–10 as one-off `helm install`s gets migrated *under* ArgoCD's management
-rather than staying hand-installed.
+rather than staying hand-installed. Deliberately staged rather than done
+in one pass: landing page adopted first (stateless, disposable, lowest
+risk if the adoption pattern turned out to be wrong), then two pure
+metrics exporters (kube-state-metrics, node-exporter) to prove it again
+on a Helm-sourced release and then a DaemonSet, before ever touching
+anything stateful. 3 of 10 releases adopted so far.
 
 **Why ArgoCD over Flux:** ArgoCD ships a web UI showing sync status,
 Git-vs-live diffs, and app health, all visible and clickable — which
@@ -328,6 +333,31 @@ just describing it in words.
 fixed to not "skip ahead to GitOps... before the cluster itself is
 stable" — avoiding debugging a reconciliation loop and a flaky cluster at
 the same time.
+
+**The adoption story, if asked "how do you migrate something already
+running into GitOps without downtime":** every adoption is verified the
+same way — record the live pod's UID/restart count/age *before* the
+Application exists, point ArgoCD at the exact same manifests (for a Helm
+release, the exact chart version already deployed, so the rendered
+output is byte-for-byte identical), sync once, then confirm the pod's
+UID/restarts/age are *unchanged*. If they match, ArgoCD only updated
+ownership/tracking metadata — it never deleted and recreated anything.
+For the two metrics exporters this went one step further: after
+adoption, queried Prometheus directly and confirmed the actual scrape
+targets were still `up` — the functional check, not just "the resource
+looks the same."
+
+**A real bug found and fixed along the way, worth telling if asked "what
+went wrong":** after the first adoption, the root `Application` showed a
+permanent `OutOfSync` even immediately following a clean sync. Traced it
+(not guessed) via ArgoCD's own `managed-resources` diff API: the child
+Application manifest declared `directory: {recurse: false}` and
+`syncPolicy: {}` explicitly, but ArgoCD's controller persists the live
+object *without* those empty/default fields, so Git and live could never
+converge. Fixed by dropping the redundant fields (omitting them is
+functionally identical). Small bug, but the diagnosis path — reading the
+actual API diff instead of assuming "it'll resolve itself" — is the more
+interesting answer.
 
 ---
 
@@ -354,7 +384,10 @@ services (ingress/Redis/Postgres/Sealed Secrets), observability
 (Prometheus/Grafana in-cluster), Jenkins with a real,
 SCM-poll-verified pipeline, and the landing page — built, deployed via
 its own Jenkins-driven kaniko build/push, and proven live against real
-cluster data. **Step 11 (ArgoCD, PX-015) is next** — currently just a
-title-only stub, not yet scoped in detail, per this repo's own
-convention of writing tickets just before each phase starts. Live
-status: `docs/TICKETS.md`.
+cluster data. **Step 11 (ArgoCD, PX-015) is in progress**: ArgoCD is
+installed and 3 of 10 existing releases (landing page,
+kube-state-metrics, node-exporter) are adopted under GitOps, each
+verified without disrupting the running workload. Remaining:
+nginx-ingress, Redis, Postgres operator, Prometheus, Grafana, Jenkins,
+Sealed Secrets — Postgres/Redis saved for last since they're stateful.
+Live status: `docs/TICKETS.md`.

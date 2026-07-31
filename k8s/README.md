@@ -1,10 +1,14 @@
 # k8s/ — Helm values, manifests, ArgoCD app defs
 
-Per `docs/SPEC.md` §7 build order, ArgoCD retrofit (step 8) happens
-*after* the core services are stable — everything here is currently
-applied via plain `helm install`/`kubectl apply`, not GitOps yet. This
-directory is the record of exactly what was installed and how, so it
-can be retrofitted under ArgoCD later without reverse-engineering it.
+Per `docs/SPEC.md` §7 build order, ArgoCD retrofit (step 8) started
+after the core services were stable. It's in progress, not complete:
+3 of 10 existing releases (landing page, kube-state-metrics,
+node-exporter) are adopted under ArgoCD so far — nginx-ingress, Redis,
+Postgres operator, Prometheus, Grafana, Jenkins, and Sealed Secrets are
+still applied directly via plain `helm install`/`kubectl apply`. This
+directory is the record of exactly what was installed and how, so each
+remaining release can be retrofitted under ArgoCD without
+reverse-engineering it.
 
 ## What's installed (PX-009)
 
@@ -159,3 +163,49 @@ running cluster matches intent immediately) and at the source
 doesn't silently lose it again). Full trail in `docs/TICKETS.md` under
 **PX-008**, not PX-010 — that's where the actual defect was, even though
 PX-010 (node-exporter needing to run on `cp-1` too) is what surfaced it.
+
+## What's installed (PX-015, in progress)
+
+| Component | Namespace | Install |
+|---|---|---|
+| ArgoCD | `argocd` | `helm install argocd argo/argo-cd -n argocd -f k8s/argocd/values.yaml` (`k8s/argocd/argocd-github-deploy-key-sealedsecret.yaml` applied first) |
+
+Additional Helm repo used:
+```
+helm repo add argo https://argoproj.github.io/argo-helm
+```
+
+Pinned to `wk-1` via `global.nodeSelector`, grouped with the other
+always-on data/apps services, kept off `wk-2` to avoid contending with
+Jenkins builds. Reachable at `http://argocd.lab.test` through
+nginx-ingress (server runs `--insecure`, TLS terminated nowhere in this
+home lab). Dedicated ed25519 read-only GitHub deploy key, separate from
+Jenkins's, sealed as ArgoCD's real repo-credential secret shape
+(`Opaque`, labeled `argocd.argoproj.io/secret-type: repository`) — not
+a literal `kubernetes.io/ssh-auth` typed secret, contrary to how the
+ticket's decision was originally worded; ArgoCD only recognizes repo
+credentials in the former shape.
+
+App-of-apps skeleton: one root `Application` (`k8s/argocd/root-app.yaml`,
+manual sync) manages one child `Application` per adopted release under
+`k8s/argocd/apps/`. Adopted so far, each verified via a real sync with
+identical pod UID/restarts/age before and after (no disruptive
+reinstall) and the release's actual functional check (not just
+resource-identity comparison):
+
+| Adopted release | Application manifest | Adoption method |
+|---|---|---|
+| Landing page | `k8s/argocd/apps/landing-page.yaml` | Raw manifests, git source pointed straight at `k8s/landing-page/` |
+| kube-state-metrics | `k8s/argocd/apps/kube-state-metrics.yaml` | Multi-source: upstream Helm chart pinned to the exact live version (`8.0.0`) + values file from this repo via `ref: values` |
+| node-exporter | `k8s/argocd/apps/node-exporter.yaml` | Same multi-source pattern, chart pinned to `4.56.1` — first DaemonSet adopted (vs. Deployments) |
+
+Every `Application`, including the root, is manual-sync only (no
+auto-prune/self-heal) — reconciliation against live state always
+requires an explicit, reviewed sync, consistent with every other
+state-changing action in this project.
+
+Remaining: nginx-ingress, Redis, Postgres operator, Prometheus,
+Grafana, Jenkins, Sealed Secrets — still installed exactly as documented
+in the sections above, not yet under ArgoCD. Postgres/Redis are
+deliberately saved for last (stateful, higher blast radius if an
+adoption goes wrong) — see `docs/TICKETS.md` PX-015 decision 4.
