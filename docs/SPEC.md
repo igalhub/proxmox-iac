@@ -10,7 +10,9 @@ retrofit). All 10 existing releases are now managed by ArgoCD
 trail. A real, tested Postgres backup story (WAL-G to in-cluster MinIO,
 §7) landed via PX-020 — deliberately ahead of PX-022's Longhorn storage
 migration, so a verified backup exists before the storage layer
-underneath that same data gets touched. Live status: `docs/TICKETS.md`.
+underneath that same data gets touched. Ingress now reaches the cluster
+via a real dedicated LoadBalancer IP (MetalLB, `192.168.10.13`, §4/§8)
+rather than a NodePort, per PX-021. Live status: `docs/TICKETS.md`.
 
 ---
 
@@ -107,7 +109,7 @@ Jenkins is explicitly called out as the heaviest *single component* (JVM baselin
 - Planned IPs: cp-1 `.10`, wk-1 `.11`, wk-2 `.12`. **Confirmed free 2026-07-30**, checked three independent ways: (1) live ICMP ping sweep of `192.168.10.0/24`, (2) ARP table cross-check — catches devices that don't answer ping, e.g. `.3` was silent on ICMP but present in ARP, so ping-only would have missed it; only `.1` (gateway), `.2`, `.3`, `.4`, and `.50` (the Proxmox host) showed any activity, (3) the router's own DHCP client list/static-lease config directly — nothing reserved or leased at `.10`/`.11`/`.12`. All three agree.
 - **Structural fix, not just a point-in-time check:** the router's DHCP pool was originally `192.168.10.2`–`.100`, which overlapped the planned static range (and, incidentally, `.50` — the Proxmox host itself has been sitting inside the DHCP pool this whole time, unaffected so far but the same latent risk). Router had no separate address-reservation/exclusion feature, so the pool's start was narrowed to `192.168.10.21`, permanently removing `.2`–`.20` from anything DHCP can hand out. `.10`–`.12` are now structurally unreachable by DHCP, not just observed-empty at a point in time. Devices previously leased at `.2`/`.3`/`.4` will pick up a new address from `.21`–`.100` on their next natural lease renewal — expected, harmless, no action needed. Fully resolved, no longer an open item. **Update:** the same mirrored fix was also applied to `.50` — pool's end address narrowed from `.100` to `.49` (nothing else was active in `.50`–`.100`, so this displaced no other device). DHCP pool is now `192.168.10.21`–`.49`. Both the Proxmox host (`.50`) and the planned cluster (`.10`–`.12`) are structurally outside anything DHCP can ever hand out.
 - CNI: k3s default (flannel, VXLAN backend). No case for Cilium/Calico here — flannel is sufficient for a 3-node lab cluster and switching CNIs is not one of the skills gaps this project targets.
-- Ingress traffic reaches nginx-ingress via a NodePort (or MetalLB, stretch — see §8) on wk-1; DNS/hosts-file entries on Igal's machine map friendly names (`jenkins.lab`, `argocd.lab`, `status.lab`) to that node's IP.
+- **Ingress entry point: MetalLB (PX-021), not NodePort.** nginx-ingress's Service is `type: LoadBalancer`, backed by MetalLB (layer2 mode — the only mode a single flat bridge like this one supports; BGP needs router support this network doesn't have) via a one-address `IPAddressPool` (`k8s/metallb/config/`). Real dedicated address: `192.168.10.13` — right after wk-2's `.12`, structurally outside the DHCP pool (`.21`-`.49`, above) the same way `.10`-`.12`/`.50` are, confirmed free the same rigorous three-way check: ping sweep (no response), ARP table (no entry), and the router's own DHCP client/static-lease list (confirmed directly by igalhub). DNS/hosts-file entries on Igal's machine map friendly names (`jenkins.lab`, `argocd.lab`, `status.lab`, `grafana.lab`) to this one fixed IP directly — no per-service NodePort lookup needed anymore. **Prior state:** NodePort (`30963`/`31395` on wk-1's own IP) — kept working throughout the MetalLB migration (confirmed side-by-side), superseded rather than removed as a fallback.
 
 ---
 
@@ -198,12 +200,12 @@ torn down.
 6. ✅ Jenkins (Helm) — done once the rest is stable, since it's the heaviest single component.
 7. ✅ Landing page (in-cluster Prometheus API → live metrics), deployed behind nginx-ingress.
 8. ✅ ArgoCD installed (Helm, `wk-1`, behind nginx-ingress at `argocd.lab.test`), retrofitting everything from step 4 onward under GitOps management. All 10 existing releases adopted (landing page, kube-state-metrics, node-exporter, Prometheus, Grafana, Jenkins, Postgres operator, Sealed Secrets, Redis, nginx-ingress) — none remain as one-off `helm install`s (see `docs/TICKETS.md` PX-015 for the full adoption trail, including the nginx-ingress admission-webhook risk investigation).
-9. Stretch: Longhorn, MetalLB, Jenkins pipeline coverage expanded (Sealed Secrets is already done, PX-009).
+9. ✅ MetalLB (PX-021) — nginx-ingress switched from NodePort to a real dedicated LoadBalancer IP (`192.168.10.13`, layer2 mode). Stretch: Longhorn, Jenkins pipeline coverage expanded (Sealed Secrets is already done, PX-009).
 
 ## 9. Open questions / not yet decided
 
 - ~~Exact static IP assignments~~ — resolved (§4): cp-1 `.10`, wk-1 `.11`, wk-2 `.12`, confirmed free and structurally reserved outside the DHCP pool.
-- ~~MetalLB vs plain NodePort for ingress entry point~~ — resolved in practice: NodePort is what's actually running (Jenkins/Grafana both reachable via the ingress-nginx NodePort). MetalLB remains a stretch item (§8.9) if a real LoadBalancer IP is wanted later.
+- ~~MetalLB vs plain NodePort for ingress entry point~~ — resolved (PX-021): MetalLB deployed (layer2 mode), nginx-ingress switched to `type: LoadBalancer` with a real dedicated IP (`192.168.10.13`, §4). NodePort superseded, not removed — still functional as a fallback.
 - ~~Whether Jenkins build agents run as k8s pods... or a fixed agent~~ — resolved (PX-013): dynamic Kubernetes pod agents via the Jenkins Kubernetes plugin, confirmed ephemeral in practice.
 - ~~`igalhub/project-template` scaffold could not be pulled into this repo~~ — resolved (PX-011): Igal pointed at the local checkout (`~/claudecode/projects/project-template`), scaffold reconciled against it. This repo follows the template's `--lang bash` shape (shellcheck, plain git pre-commit hook, no pre-commit-framework/uv dependency) since it's Terraform/Ansible, not Python, extended with Terraform-fmt/validate and ansible-lint CI jobs the template has no opinion on. One gap remains: `.claude/dev-check.sh` couldn't be written directly into this repo (protected path in that session) — delivered separately, needs manual copy-in.
 

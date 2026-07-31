@@ -215,3 +215,38 @@ install`/`kubectl apply`. Postgres/Redis were deliberately saved for
 later in the adoption order (stateful, higher blast radius if an
 adoption goes wrong), with nginx-ingress saved for last of all — see
 `docs/TICKETS.md` PX-015 decision 4 and the full adoption trail.
+
+## What's installed (PX-020)
+
+| Component | Namespace | Install |
+|---|---|---|
+| MinIO | `minio` | ArgoCD Application (`k8s/argocd/apps/minio.yaml`), official `minio/minio` chart — not Bitnami's, whose free images no longer resolve (see `docs/SPEC.md` §7) |
+
+First brand-new service installed directly through ArgoCD rather than
+adopted from a pre-existing `helm install` (`syncOptions:
+CreateNamespace=true` handles namespace creation declaratively). Pinned
+to `wk-2`, deliberately not `wk-1` where Postgres itself runs — see
+`k8s/minio/values.yaml`'s own comment. Exists solely as the WAL-G backup
+target for Postgres's continuous archiving + daily base backups
+(`k8s/postgres-operator/postgresql-cr.yaml`'s `spec.env`). Full backup
+architecture, retention, stated RPO, and the two real platform issues
+hit along the way: `docs/SPEC.md` §7; full verification trail
+(real WAL segment + base backup confirmed in the target, real
+checksum-verified restore): `docs/TICKETS.md` PX-020.
+
+## What's installed (PX-021)
+
+| Component | Namespace | Install |
+|---|---|---|
+| MetalLB | `metallb-system` | ArgoCD Application (`k8s/argocd/apps/metallb.yaml`), official chart, layer2 mode |
+
+Also a brand-new direct-through-ArgoCD install, same pattern as MinIO
+above. The layer2 config itself (`IPAddressPool`/`L2Advertisement`) is a
+*separate* Application (`k8s/argocd/apps/metallb-config.yaml`,
+raw manifests from `k8s/metallb/config/`) synced only after `metallb`
+is confirmed `Healthy` — MetalLB's own CRDs have to exist before those
+CRs can apply. `nginx-ingress`'s Service switched from `NodePort` to
+`type: LoadBalancer`, now reachable at a real dedicated address,
+`192.168.10.13`, instead of a node IP + random high port. Full rationale
+and address verification: `docs/SPEC.md` §4/§8; full sync/verification
+trail: `docs/TICKETS.md` PX-021.
