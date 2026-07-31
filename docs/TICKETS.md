@@ -1796,7 +1796,80 @@ IP + NodePort, simplifying every ingress-routed service at once.
 
 ## PX-022 — Longhorn distributed storage, replacing local-path for Postgres/Redis PVs
 
-**Status:** OPEN
+**Status:** OPEN — in progress. Longhorn installed and Redis fully
+migrated and verified; Postgres migration not yet started.
+
+**Progress so far, real evidence not assumed:**
+
+- **Disk headroom confirmed live**, not assumed from the RAM budget:
+  wk-1 47GB free (19% used), wk-2 50GB free (14% used), both single-disk
+  VMs (no separate dedicated disk — Longhorn uses a directory on the
+  existing root filesystem). cp-1 excluded entirely (34GB free but
+  deliberately workload-free per `docs/SPEC.md` §1) — only 2 real
+  storage-candidate nodes exist.
+- **Replication factor 2**, justified against those real numbers: a 3rd
+  replica would have nowhere valid to go (cp-1 isn't meant to host
+  workloads); total data in scope (Postgres 2Gi + Redis 2x1Gi ≈ 4Gi)
+  costs ~8Gi at factor 2, comfortably under 10% of either node's free
+  space.
+- **Longhorn installed** (official chart v1.12.0) directly through
+  ArgoCD — another brand-new service since PX-015, not an adoption.
+  Storage restricted to wk-1/wk-2 via a `longhorn-storage=true` node
+  label (applied live via `kubectl label`, not yet codified in
+  Ansible — a known gap, noted so a fresh node rebuild doesn't silently
+  lose it). `longhorn` StorageClass created separately (after the chart
+  Application was confirmed `Healthy` — its CRDs have to exist first),
+  `numberOfReplicas: 2` confirmed directly on the real object.
+- **A real platform issue hit and fixed:** the first sync hung
+  indefinitely — `longhorn-pre-upgrade` hook Job stuck `Running`,
+  blocking everything else, because it referenced a ServiceAccount that
+  only the chart's *normal* (non-hook) resources create, which ArgoCD
+  hadn't applied yet since the blocking PreSync hook came first. Root
+  cause: ArgoCD translates every Helm hook type — including
+  `pre-upgrade` — into its own PreSync hook and runs it regardless of
+  whether this is genuinely a fresh install (unlike native
+  `helm install`, which skips pre-upgrade hooks on install). The chart's
+  own `values.yaml` documents this exact gotcha —
+  `preUpgradeChecker.jobEnabled: true` → `false` fixed it for real,
+  confirmed via a clean re-sync (`Synced`/`Succeeded`, all CRDs
+  `Established: true`).
+- **Longhorn functionally verified** before touching real data: a
+  throwaway PVC/pod smoke test confirmed exactly 2 replicas landing on
+  wk-1 and wk-2, `ROBUSTNESS: healthy`, and clean provision→delete
+  lifecycle (volume fully reaped after PVC deletion, `reclaimPolicy:
+  Delete` working as expected).
+- **Redis migrated first, both PVCs, fully verified and cut over.**
+  Copied `/data` (AOF persistence, not RDB) from both old local-path
+  PVCs to new Longhorn PVCs via a temporary pod mounting all four
+  volumes simultaneously (old PVCs read-only) — every file's `md5sum`
+  matched exactly, ownership/permissions preserved. Functionally
+  verified beyond file checksums: booted a temporary standalone Redis
+  pointed at the copied master data, it loaded the AOF cleanly (`Ready
+  to accept connections`), and `DBSIZE`/`GET px009-check` matched the
+  live source exactly (`1` / `"ok"`).
+
+  **Cutover executed by igalhub directly, not by Claude Code** — the
+  Bitnami chart hardcodes its PVC name and the old PVCs have
+  `reclaimPolicy: Delete`, so freeing the name for reuse is the same
+  action as deleting the old data; per this repo's hard rule on
+  permanently destructive actions, the exact command sequence (scale
+  down → retain+release the verified Longhorn PVs → delete the old
+  local-path PVCs → statically rebind new PVCs under the original names
+  → scale back up) was written out, reviewed, and run by igalhub
+  himself. **Independently re-verified by Claude Code after, not taken
+  on report alone:** both pods `Running` with 0 restarts (fresh pods on
+  the new PVCs), both PVCs `Bound` with `storageClassName: longhorn`,
+  both underlying PVs `Bound`/`Retain`, `GET px009-check` → `"ok"`,
+  `DBSIZE` → `1`, and each volume confirmed via
+  `kubectl get replicas.longhorn.io` to genuinely have exactly 2
+  replicas split across wk-1 and wk-2 — not assumed from the StorageClass
+  parameter alone.
+
+**Not yet done:** Postgres migration (fresh pre-migration backup,
+provision/copy/checksum, cutover, verification), `docs/SPEC.md` update
+covering the full storage architecture (partial — Redis's cutover is
+real but the doc update is deferred to close out with Postgres's, so
+the architecture section is written once, complete, not twice).
 
 **Background:** Postgres and Redis PVs currently use k3s's default
 `local-path` storage class — each PV's actual data lives on a single
@@ -1829,21 +1902,23 @@ fresh Postgres backup immediately before its own cutover, as a second
 safety net beyond PX-020's standing backup story.
 
 **Acceptance criteria:**
-- [ ] Disk headroom confirmed on nodes that will host Longhorn replicas
+- [x] Disk headroom confirmed on nodes that will host Longhorn replicas
       (real `df -h`/`lsblk`, not assumed from the RAM budget)
-- [ ] Longhorn installed, StorageClass created with an explicit,
+- [x] Longhorn installed, StorageClass created with an explicit,
       justified replication factor
-- [ ] Redis migrated first (both PVCs), verified via checksum/data
+- [x] Redis migrated first (both PVCs), verified via checksum/data
       comparison before its old PV is decommissioned, not just pod health
 - [ ] A fresh Postgres backup taken and confirmed immediately before its
       migration (belt-and-suspenders alongside PX-020)
 - [ ] Postgres migrated, verified via checksum/data comparison plus a
       real query against known data, before its old PV is decommissioned
-- [ ] Old `local-path` PVs deleted only after both migrations are
+- [x] Old `local-path` PVs deleted only after both migrations are
       independently confirmed — not left dangling, not deleted
-      prematurely
+      prematurely (Redis's old PVs; Postgres's still pending its own
+      migration)
 - [ ] `docs/SPEC.md` updated: storage architecture, replication factor
-      and its rationale, disk budget
+      and its rationale, disk budget (deferred to close-out, written once
+      complete rather than twice)
 
 ---
 
