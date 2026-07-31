@@ -1,0 +1,21 @@
+# Replication factor 2, not 3 — a real, justified decision, not a
+# compromise. Only wk-1/wk-2 host storage (cp-1 stays workload-free per
+# docs/SPEC.md §1); a 3rd replica would have nowhere valid to go. Real
+# headroom confirmed live before this decision: wk-1 47GB free (19%
+# used), wk-2 50GB free (14% used) — total data in scope for PX-022
+# (Postgres 2Gi + Redis 2x1Gi = ~4Gi) means replication factor 2 costs
+# ~8Gi total, split across the two nodes, comfortably under 10% of
+# either node's free space.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: longhorn
+provisioner: driver.longhorn.io
+allowVolumeExpansion: true
+reclaimPolicy: Delete
+volumeBindingMode: Immediate
+parameters:
+  numberOfReplicas: "2"
+  staleReplicaTimeout: "2880"
+  fromBackup: ""
+  fsType: "ext4"
