@@ -1,0 +1,36 @@
+# PX-020's backup target. Unlike every other Application under
+# k8s/argocd/apps/, this is not an adoption of a pre-existing
+# `helm install` — it's the first brand-new service installed directly
+# through ArgoCD since the PX-015 retrofit made this repo fully GitOps,
+# so `syncOptions: CreateNamespace=true` handles namespace creation
+# declaratively instead of a manual `kubectl create namespace` first.
+#
+# Pinned to wk-2 (see k8s/minio/values.yaml's own comment) — deliberately
+# not wk-1, where Postgres itself runs, so a single wk-1 disk failure
+# can't take out both the live data and its only backup.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: minio
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://charts.bitnami.com/bitnami
+      chart: minio
+      targetRevision: 17.0.21
+      helm:
+        releaseName: minio
+        valueFiles:
+          - $values/k8s/minio/values.yaml
+    - repoURL: git@github.com:igalhub/proxmox-iac.git
+      targetRevision: master
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: minio
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+  # Manual sync, no auto-prune/self-heal — same discipline as every
+  # other Application in this repo (docs/TICKETS.md PX-015 decision 3).

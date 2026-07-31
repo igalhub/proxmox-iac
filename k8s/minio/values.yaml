@@ -1,0 +1,37 @@
+# Deliberately pinned to wk-2, not wk-1 — wk-1 is where Postgres itself
+# runs (docs/SPEC.md §1). Colocating the backup target with the primary
+# it's backing up would mean a single wk-1 disk failure takes out both
+# the live data and its only backup, defeating the entire point of
+# PX-020. wk-2 has ample headroom confirmed live (~50GB disk free,
+# ~6.4GB RAM available) before this was written.
+mode: standalone
+
+auth:
+  existingSecret: minio-auth
+  rootUserSecretKey: root-user
+  rootPasswordSecretKey: root-password
+
+# Single bucket, created at first boot — the only thing this instance
+# exists for is holding PX-020's Postgres WAL-G backups.
+defaultBuckets: "postgres-backups"
+
+persistence:
+  enabled: true
+  storageClass: local-path
+  size: 10Gi
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: "1"
+    memory: 512Mi
+
+nodeSelector:
+  kubernetes.io/hostname: wk-2
+
+# No ingress — MinIO is only reached in-cluster, by the Postgres pod's
+# WAL-G archiving. Not a service anything outside the cluster needs.
+service:
+  type: ClusterIP
