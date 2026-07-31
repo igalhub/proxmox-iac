@@ -1091,12 +1091,18 @@ second PVC, first Ingress among the Helm-sourced adoptions. Sixth
 partial slice, same day (branch `feature/PX-015-jenkins-adoption`) —
 Jenkins adopted, highest-stakes so far: first StatefulSet, real build
 history/config on its PVC, three standalone SealedSecrets it depends on
-correctly left out of the Application. This is deliberate, not a
-shortcut: the remaining 4 services (nginx-ingress, Redis, Postgres
-operator, Sealed Secrets) are still plain `helm install`/`kubectl apply`
-and their adoption is separate future work. Do not treat this ticket as
-DONE and do not check the "one child `Application` per existing
-release" box until that full adoption actually happens.**
+correctly left out of the Application. Seventh partial slice, same day
+(branch `feature/PX-015-postgres-operator-adoption`) — Postgres Operator
+adopted: despite the name, only the operator's stateless controller
+Deployment, no PVC — the actual data-bearing `proxmox-iac-pg` postgresql
+CR lives separately in the `postgres` namespace, was never part of this
+ticket's adoption list, and this Application touches zero persisted
+data. This is deliberate, not a shortcut: the remaining 3 services
+(nginx-ingress, Redis, Sealed Secrets) are still plain `helm
+install`/`kubectl apply` and their adoption is separate future work. Do
+not treat this ticket as DONE and do not check the "one child
+`Application` per existing release" box until that full adoption
+actually happens.**
 
 kube-state-metrics, node-exporter, Prometheus, Grafana, and Jenkins
 adoption all used a multi-source `Application`
@@ -1136,6 +1142,18 @@ and replica count were unchanged and the PVC's only differences were
 server-populated defaults, not a real change, before committing to the
 sync.
 
+Postgres Operator adoption (`k8s/argocd/apps/postgres-operator.yaml`)
+used the same multi-source pattern, chart pinned to `2.0.1`. This
+Application also templates the operator's 3 CRDs
+(`postgresqls.acid.zalan.do` etc.) — already existed, so the sync only
+updated their ownership/tracking metadata, same as every other
+resource. Verified: operator pod UID `a3a4e4f2-...` unchanged, all 11
+tracked resources `Synced`, and — the real functional check, since the
+operator's own state doesn't say much about the database it manages —
+the actual `proxmox-iac-pg` postgresql CR and its pod confirmed
+completely untouched (`Running`, 0 restarts, unchanged 17h age) and
+`pg_isready` against the live pod still reports accepting connections.
+
 One correction to decision 1's wording: the sealed secret is ArgoCD's
 real repo-credential secret shape (`Opaque`, labeled
 `argocd.argoproj.io/secret-type: repository`, keys `type`/`url`/`sshPrivateKey`),
@@ -1155,14 +1173,16 @@ against the real private repo.
       connection state `Successful` via the ArgoCD API
 - [ ] Root `Application` (app-of-apps) manages one child `Application`
       per existing release — **partial**: landing-page, kube-state-metrics,
-      node-exporter, Prometheus, Grafana, and Jenkins adopted so far, all
-      without a disruptive reinstall — confirmed via `kubectl get pods`:
-      identical pod UID(s), 0 restarts, unchanged age before and after
-      each real sync (Prometheus, Grafana, and Jenkins additionally
-      confirmed via each PVC's UID/backing volume unchanged, Jenkins
-      further confirmed via intact build history and credentials). The
-      other 4 services
-      remain un-adopted and un-stubbed.
+      node-exporter, Prometheus, Grafana, Jenkins, and Postgres Operator
+      adopted so far, all without a disruptive reinstall — confirmed via
+      `kubectl get pods`: identical pod UID(s), 0 restarts, unchanged age
+      before and after each real sync (Prometheus, Grafana, and Jenkins
+      additionally confirmed via each PVC's UID/backing volume unchanged,
+      Jenkins further confirmed via intact build history and
+      credentials, Postgres Operator further confirmed via the actual
+      `proxmox-iac-pg` postgresql CR/pod being completely untouched and
+      still accepting connections). The other 3 services remain
+      un-adopted and un-stubbed.
 - [x] Every `Application`, including the root, set to manual sync —
       both `root-app.yaml` and `apps/landing-page.yaml` have `syncPolicy: {}`,
       confirmed no auto-prune/self-heal

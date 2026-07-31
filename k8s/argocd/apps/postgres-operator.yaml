@@ -1,0 +1,42 @@
+# Adopts the existing Postgres Operator Helm release (installed
+# directly via `helm install` in PX-009) without a reinstall. Seventh
+# PX-015 adoption. Despite the name, this is only the operator's own
+# controller Deployment — stateless, no PVC. The actual data-bearing
+# resource (the `proxmox-iac-pg` postgresql CR, Patroni-managed
+# StatefulSet, real persisted data) lives in the `postgres` namespace,
+# was applied separately via `kubectl apply -f
+# k8s/postgres-operator/postgresql-cr.yaml`, and was never part of this
+# ticket's 10-service adoption list — this Application touches zero
+# persisted data, closer in risk to kube-state-metrics than to an
+# actual database.
+#
+# Multi-source Application, same shape as the other Helm-sourced
+# adoptions: chart from its upstream repo pinned to the exact version
+# already live (2.0.1), values file stays in this repo via the
+# `ref: values` source. Release name `postgres-operator` matches the
+# live release, so every rendered resource name is identical to what's
+# already running.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: postgres-operator
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://opensource.zalando.com/postgres-operator/charts/postgres-operator
+      chart: postgres-operator
+      targetRevision: 2.0.1
+      helm:
+        releaseName: postgres-operator
+        valueFiles:
+          - $values/k8s/postgres-operator/values.yaml
+    - repoURL: git@github.com:igalhub/proxmox-iac.git
+      targetRevision: master
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: postgres-operator
+  # Manual sync, no auto-prune/self-heal (docs/TICKETS.md PX-015
+  # decision 3) — adoption itself happens via one explicit, reviewed
+  # sync, not automatically the moment this Application is created.
