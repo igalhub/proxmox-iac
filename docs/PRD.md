@@ -32,7 +32,7 @@ The bar for "done" isn't "it runs." It's "I can defend every decision in this re
 - `terraform apply` from a clean Proxmox host produces three running VMs matching spec, with no manual intervention.
 - `ansible-playbook` against those VMs produces a working k3s cluster (`kubectl get nodes` shows 1 ready control-plane + 2 ready workers) with no manual steps.
 - Redis and Postgres are reachable from inside the cluster, Postgres via the Zalando operator's CRD, Redis via Helm.
-- A commit to the GitOps-tracked path in this repo results in ArgoCD applying the change without any `kubectl apply` by hand.
+- A commit to the GitOps-tracked path in this repo results in ArgoCD applying the change without `kubectl apply` by hand — reconciled via a reviewed ArgoCD sync.
 - A freshly-deployed, in-cluster Grafana (via Helm) shows live node/pod metrics for this cluster within a dashboard, sourced from kube-state-metrics + node-exporter running on the new nodes.
 - Jenkins has at least one working pipeline that does something real for this repo (e.g., `terraform validate` + `ansible-lint` + a Helm chart lint/test on every push).
 - The landing page, reachable via the ingress, shows live-updating cluster health pulled from the in-cluster Prometheus's HTTP API.
