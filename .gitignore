@@ -5,7 +5,8 @@ HANDOFF.md
 **/.terraform/*
 *.tfstate
 *.tfstate.*
-*.tfvars
+# *.tfvars itself is already covered by ~/.gitignore_global; the
+# example-file negation still needs to live here.
 !*.tfvars.example
 crash.log
 crash.*.log
@@ -18,7 +19,7 @@ crash.*.log
 # General
 .DS_Store
 *.swp
-.env
+# .env is already covered by ~/.gitignore_global
 
 # Python (landing/)
 __pycache__/
