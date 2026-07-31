@@ -1,10 +1,16 @@
 # wk-1 hosts the ingress controller per docs/SPEC.md's role split (§1) —
 # isolated from wk-2's Jenkins builds, the spikiest load in the cluster.
+#
+# PX-021: NodePort -> LoadBalancer, now that MetalLB (k8s/metallb/)
+# provides a real address to hand out. MetalLB's `ingress-pool` has
+# exactly one address (192.168.10.13/32, autoAssign: true) so no
+# explicit loadBalancerIP is needed here — there's nothing else it could
+# be assigned.
 controller:
   nodeSelector:
     kubernetes.io/hostname: wk-1
   service:
-    type: NodePort
+    type: LoadBalancer
   resources:
     requests:
       cpu: 50m

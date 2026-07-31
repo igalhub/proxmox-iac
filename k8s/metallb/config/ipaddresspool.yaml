@@ -1,0 +1,15 @@
+# Single address, 192.168.10.13 — right after wk-2's .12, structurally
+# outside the DHCP pool (192.168.10.21-.49, docs/SPEC.md §4) the same
+# way cp-1/wk-1/wk-2's own static IPs are. Confirmed free the same
+# rigorous way used for those: ping sweep (no response), ARP table
+# (no entry), and the router's own DHCP client/static-lease list
+# (confirmed directly by igalhub, not observed-empty only).
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  name: ingress-pool
+  namespace: metallb-system
+spec:
+  addresses:
+    - 192.168.10.13/32
+  autoAssign: true

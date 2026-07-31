@@ -1718,7 +1718,46 @@ existence confirmed. An untested backup is not a backup.
 
 ## PX-021 — MetalLB for a real LoadBalancer IP instead of NodePort
 
-**Status:** OPEN
+**Status:** DONE — closed out 2026-08-01.
+
+**Verification, real evidence not assumed:**
+
+- **IP allocated:** `192.168.10.13`, confirmed free three independent
+  ways, same rigor as `.10`-`.12`/`.50`: ICMP ping (no response), ARP
+  table (`INCOMPLETE`, no entry), and the router's own DHCP
+  client/static-lease list — confirmed directly by igalhub, since this
+  environment has no access to the router's admin interface.
+- **MetalLB installed:** official chart (layer2 mode), first brand-new
+  service installed directly through ArgoCD like PX-020's MinIO, not
+  adopted from a pre-existing install. `controller` Deployment +
+  `speaker` DaemonSet confirmed `Running` on all 3 nodes (cp-1/wk-1/
+  wk-2) — `speaker` deliberately unpinned, needs cluster-wide presence
+  to announce/fail over the VIP regardless of which node holds it.
+  `IPAddressPool`/`L2Advertisement` applied as a *separate* ArgoCD
+  Application, synced only after `metallb` itself was confirmed
+  `Healthy` (MetalLB's own CRDs have to exist first) — confirmed via
+  `kubectl get ipaddresspool`/`l2advertisement` directly, not assumed
+  from the sync result alone.
+- **nginx-ingress switched to `LoadBalancer`:** confirmed
+  `EXTERNAL-IP: 192.168.10.13` picked up on the real Service, not just
+  the manifest diff. Non-disruptive: controller pod's UID and restart
+  count both confirmed identical before/after (a Service-type change
+  doesn't touch the pod) — same discipline as every stateful/higher-risk
+  change in this project even though this one was lower-risk by
+  construction.
+- **Every existing hosts-file-routed service re-verified via the new
+  IP, no port number:** Grafana (`302`, its normal login redirect —
+  not a regression), Jenkins (`/login` → `200`, matching the exact same
+  response via the old NodePort path checked side-by-side), ArgoCD
+  (`200`), landing page (`200`) — all through `192.168.10.13` directly
+  with a `Host:` header, no `:30963` needed.
+- **`docs/SPEC.md` updated:** §4 (new ingress-entry-point paragraph,
+  NodePort noted as prior state, not removed — kept functional as a
+  fallback since a `LoadBalancer` Service still allocates NodePorts by
+  default) and §8/§9 (build-order stretch item and the previously-open
+  MetalLB-vs-NodePort question, both resolved). `k8s/README.md` gained
+  matching "What's installed" entries for PX-020 (a real gap left over
+  from that ticket, caught and fixed here) and PX-021.
 
 **Background:** nginx-ingress currently runs as a NodePort Service —
 every service behind it (Grafana, Jenkins, ArgoCD, the landing page) is
@@ -1742,15 +1781,15 @@ entries then point at that one dedicated IP directly instead of a node
 IP + NodePort, simplifying every ingress-routed service at once.
 
 **Acceptance criteria:**
-- [ ] New static IP allocated for MetalLB's pool, confirmed excluded from
+- [x] New static IP allocated for MetalLB's pool, confirmed excluded from
       DHCP the same rigorous way as the existing VM IPs
-- [ ] MetalLB installed (layer2 mode), address pool configured
-- [ ] nginx-ingress Service switched to `type: LoadBalancer`, confirmed
+- [x] MetalLB installed (layer2 mode), address pool configured
+- [x] nginx-ingress Service switched to `type: LoadBalancer`, confirmed
       it picks up the allocated IP
-- [ ] Every existing hosts-file-routed service (Grafana/Jenkins/ArgoCD/
+- [x] Every existing hosts-file-routed service (Grafana/Jenkins/ArgoCD/
       landing page) re-verified reachable via the new IP with no port
       number needed
-- [ ] `docs/SPEC.md` §4/§8 updated to reflect MetalLB as the real ingress
+- [x] `docs/SPEC.md` §4/§8 updated to reflect MetalLB as the real ingress
       entry point, NodePort noted as the prior state
 
 ---
@@ -1832,5 +1871,5 @@ safety net beyond PX-020's standing backup story.
 | PX-018 | Stop relying on a personal global gitignore for `*.tfvars` | DONE |
 | PX-019 | CI Action version pinning audit | DONE |
 | PX-020 | Real Postgres backup story (WAL-E/WAL-G) | DONE |
-| PX-021 | MetalLB for a real LoadBalancer IP instead of NodePort | OPEN |
+| PX-021 | MetalLB for a real LoadBalancer IP instead of NodePort | DONE |
 | PX-022 | Longhorn distributed storage (Postgres/Redis PVs) | OPEN |
