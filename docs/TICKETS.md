@@ -1323,6 +1323,21 @@ Theory confirmed on all three nodes: Proxmox negotiates the guest-agent
 memory-stat capability at VM boot time, and the live agent install
 (PX-007) never retroactively activated it. A graceful reboot did.
 
+**Correction (2026-08-01, during PX-022):** this ticket's root-cause
+conclusion was incomplete. The gauge maxed out again on wk-1/wk-2 with
+the guest agent still running continuously since this ticket's own
+reboot (no restarts) — meaning the actual cause was never fully
+addressed. Real cause, found and tracked in **PX-023**: `balloon: 0` in
+`terraform/vms.tf` means Proxmox can't get real memory-pressure stats
+from the guest, so it falls back to something close to `total - free`,
+which trends toward ~100% on any healthy Linux guest as the page cache
+fills (completely normal, reclaimable memory use). The reboot only ever
+reset the cache to empty, giving a false "fixed" signal for a few hours.
+Left `DONE` rather than reopened/rewritten — the verification performed
+here was real and honestly reported at the time, it just didn't run long
+enough to catch the cache refilling. History preserved; the actual fix
+is tracked in PX-023, not here.
+
 **Verification, wk-1 (VMID 111):** baseline `mem: 8632373248` /
 `maxmem: 8589934592` (just over 100%) before restart. Confirmed idle
 first — Postgres (`proxmox-iac-pg-0`) and Redis
@@ -1847,6 +1862,59 @@ safety net beyond PX-020's standing backup story.
 
 ---
 
+## PX-023 — Enable VM ballooning; PX-016's memory-gauge fix was incomplete
+
+**Status:** OPEN
+
+**Background:** During PX-022, igalhub reported the Proxmox memory gauge
+maxed out again on wk-1/wk-2 — the same symptom PX-016 closed out as
+DONE. Investigation found PX-016's conclusion was wrong, or at least
+incomplete: the guest agent has been running continuously without
+interruption since PX-016's reboot (`systemctl status
+qemu-guest-agent`: `active (running)` for 8h+, zero restarts), so this
+isn't the "agent not negotiated at boot" cause again. Real cause: all
+three VMs have `balloon: 0` in `terraform/vms.tf` (ballooning explicitly
+disabled). Inside wk-1 right now: `free -h` shows `used: 2.1Gi`,
+`buff/cache: 5.8Gi`, `available: 5.6Gi` — completely healthy Linux
+behavior (spare RAM used for reclaimable disk cache, by design).
+Without ballooning enabled, Proxmox can't get real memory-pressure stats
+from the guest and falls back to something close to `total - free`,
+which trends toward ~100% on *any* healthy long-running Linux guest,
+since Linux deliberately keeps `free` near zero. PX-016's reboot never
+fixed the actual cause — it only reset the page cache to empty, so the
+gauge looked accurate for a few hours until cache filled back up again,
+exactly as it has now. This was step 4 in PX-016's own original plan
+("if inconclusive: try enabling the balloon device via Terraform") —
+never reached, because the reboot appeared to work at the time.
+
+**Description:** Set a real, non-zero `balloon` value in
+`terraform/vms.tf` for cp-1/wk-1/wk-2 (replacing the current `balloon:
+0`), confirm via `terraform plan` exactly what this changes, apply, and
+reboot each VM (same disruptive-action discipline as PX-016: confirm no
+in-progress work first, one VM at a time, explicit go-ahead before each
+reboot). After reboot, monitor the gauge over a longer window than
+PX-016 did (hours, not minutes) to confirm it actually stays accurate as
+the page cache fills back up — not just accurate immediately
+post-reboot, which is exactly the false signal that closed PX-016
+prematurely.
+
+**Acceptance criteria:**
+- [ ] `terraform plan` reviewed before apply — confirms only the
+      `balloon` value changes, nothing else
+- [ ] All three VMs rebooted with explicit go-ahead per VM, same
+      idle/in-progress-work checks as PX-016
+- [ ] Memory gauge monitored over an extended window (hours) post-reboot
+      to confirm it stays accurate as page cache fills — the actual gap
+      in PX-016's original verification
+- [ ] `docs/TICKETS.md` PX-016 gets a correction note pointing here,
+      since its DONE status/root-cause conclusion turned out to be
+      incomplete — history isn't rewritten, but not left misleading
+      either
+- [ ] `docs/SPEC.md` updated if the resource-budget section needs a note
+      about ballooning being enabled
+
+---
+
 ## Ticket status
 
 | Ticket | Title | Status |
@@ -1873,3 +1941,4 @@ safety net beyond PX-020's standing backup story.
 | PX-020 | Real Postgres backup story (WAL-E/WAL-G) | DONE |
 | PX-021 | MetalLB for a real LoadBalancer IP instead of NodePort | DONE |
 | PX-022 | Longhorn distributed storage (Postgres/Redis PVs) | OPEN |
+| PX-023 | Enable VM ballooning; PX-016's memory-gauge fix was incomplete | OPEN |
