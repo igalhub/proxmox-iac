@@ -1,0 +1,40 @@
+# Adopts the existing kube-state-metrics Helm release (installed
+# directly via `helm install` in PX-010) without a reinstall. Chosen as
+# the second PX-015 adoption after the landing page: pure metrics
+# exporter, no ingress, no dependents anywhere else in the cluster —
+# lowest remaining blast radius before touching anything traffic- or
+# data-bearing (docs/TICKETS.md PX-015 decision 4).
+#
+# Multi-source Application: the Helm chart itself comes straight from
+# its upstream repo, pinned to the exact version already live
+# (8.0.0, matches k8s/kube-state-metrics/values.yaml's comment), so the
+# rendered manifests are byte-for-byte what's already running — the
+# only thing changing on sync is resource ownership/tracking metadata,
+# not the resources themselves. The values file stays in this repo
+# (not duplicated into this Application) via the second `ref: values`
+# source, ArgoCD's standard pattern for "external chart + values from
+# git".
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kube-state-metrics
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://prometheus-community.github.io/helm-charts
+      chart: kube-state-metrics
+      targetRevision: 8.0.0
+      helm:
+        releaseName: kube-state-metrics
+        valueFiles:
+          - $values/k8s/kube-state-metrics/values.yaml
+    - repoURL: git@github.com:igalhub/proxmox-iac.git
+      targetRevision: master
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  # Manual sync, no auto-prune/self-heal (docs/TICKETS.md PX-015
+  # decision 3) — adoption itself happens via one explicit, reviewed
+  # sync, not automatically the moment this Application is created.
