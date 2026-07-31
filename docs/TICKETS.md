@@ -1542,7 +1542,38 @@ attribute the ignore to this repo's `.gitignore`, not `~/.gitignore_global`.
 
 ## PX-019 — CI Action version pinning audit
 
-**Status:** OPEN
+**Status:** DONE — closed out 2026-07-31 (PR #56). CI confirmed green on
+the real PR run using the SHA-pinned actions (all 4 jobs:
+`shellcheck`/`terraform`/`ansible-lint`/`ruff`), not assumed from the
+diff looking correct.
+
+**Findings:** Both actions used in `ci.yml` were already current at their
+pinned major — no version bump was needed: `actions/checkout@v7` (latest
+patch `v7.0.1`, published 2026-07-20) and `hashicorp/setup-terraform@v4`
+(latest patch `v4.0.1`, published 2026-05-12). Checked deliberately
+rather than assumed, given GitHub's active Node.js 20 → 24 runner
+migration (default flipped to Node 24 on 2026-06-16, full Node 20
+removal 2026-09-16 — squarely mid-migration as of this ticket): both
+actions' `action.yml` at their pinned tags already declare
+`using: node24`, so neither is affected by the deprecation. Nothing
+shifted since PX-013's reactive bump.
+
+**Tag-pinning vs. SHA-pinning decision:** adopted SHA-pinning,
+documented here as a deliberate trade-off, not a silent default. Tag
+pins (`@v7`) are more readable but mutable — a compromised action could
+be re-tagged to point at malicious code without this repo's own history
+showing any change. SHA pins are immutable (the actual supply-chain-
+security practice at real companies) at the cost of readability, solved
+here with an inline `# vX.Y.Z` comment on every pin. Chosen because the
+cost is genuinely low (only 2 unique actions across 5 `uses:` lines) and
+this project's whole thesis is demonstrating real, defensible production
+practices under interview questioning — same reasoning that drove the
+Postgres-operator-over-Helm-chart decision (PX-009). All 5 lines in
+`.github/workflows/ci.yml` now pin by commit SHA with a version comment:
+`actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1` (×4)
+and `hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1`
+(×1). Both SHAs confirmed against the real tag refs
+(`gh api repos/<org>/<repo>/git/refs/tags/<tag>`), not typed from memory.
 
 **Background:** Carried on the Stretch list since early in the project,
 same class of issue as `project-template`'s PT-008. CI has now run for a
@@ -1561,13 +1592,14 @@ a comment). Lowest-risk item of the four requested — pure CI hygiene, no
 live cluster interaction at all.
 
 **Acceptance criteria:**
-- [ ] Every `uses:` line in `ci.yml` reviewed against current latest
-      stable major version
-- [ ] Tag-pinning vs. SHA-pinning decision made and documented as a named
+- [x] Every `uses:` line in `ci.yml` reviewed against current latest
+      stable major version — both already current, no bump needed
+- [x] Tag-pinning vs. SHA-pinning decision made and documented as a named
       trade-off, not a silent default
-- [ ] If SHA-pinning adopted, each pinned SHA has a comment noting which
+- [x] If SHA-pinning adopted, each pinned SHA has a comment noting which
       tag/version it corresponds to
-- [ ] CI still green after any version bumps
+- [x] CI still green after any version bumps — confirmed on the real
+      PR run (#56), all 4 jobs pass
 
 ---
 
@@ -1726,7 +1758,7 @@ safety net beyond PX-020's standing backup story.
 | PX-016 | Resolve Proxmox memory-gauge inaccuracy (wk-1/wk-2/cp-1) | DONE |
 | PX-017 | Narrow ghcr.io push token scope once repo is public | OPEN |
 | PX-018 | Stop relying on a personal global gitignore for `*.tfvars` | DONE |
-| PX-019 | CI Action version pinning audit | OPEN |
+| PX-019 | CI Action version pinning audit | DONE |
 | PX-020 | Real Postgres backup story (WAL-E/WAL-G) | OPEN |
 | PX-021 | MetalLB for a real LoadBalancer IP instead of NodePort | OPEN |
 | PX-022 | Longhorn distributed storage (Postgres/Redis PVs) | OPEN |
