@@ -1097,12 +1097,15 @@ adopted: despite the name, only the operator's stateless controller
 Deployment, no PVC — the actual data-bearing `proxmox-iac-pg` postgresql
 CR lives separately in the `postgres` namespace, was never part of this
 ticket's adoption list, and this Application touches zero persisted
-data. This is deliberate, not a shortcut: the remaining 3 services
-(nginx-ingress, Redis, Sealed Secrets) are still plain `helm
-install`/`kubectl apply` and their adoption is separate future work. Do
-not treat this ticket as DONE and do not check the "one child
-`Application` per existing release" box until that full adoption
-actually happens.**
+data. Eighth partial slice, same day (branch
+`feature/PX-015-sealed-secrets-adoption`) — Sealed Secrets controller
+adopted, highest-stakes for a different reason than statefulness: it
+holds the keypair that decrypts every SealedSecret in the cluster. This
+is deliberate, not a shortcut: the remaining 2 services (nginx-ingress,
+Redis) are still plain `helm install`/`kubectl apply` and their
+adoption is separate future work. Do not treat this ticket as DONE and
+do not check the "one child `Application` per existing release" box
+until that full adoption actually happens.**
 
 kube-state-metrics, node-exporter, Prometheus, Grafana, and Jenkins
 adoption all used a multi-source `Application`
@@ -1154,6 +1157,27 @@ the actual `proxmox-iac-pg` postgresql CR and its pod confirmed
 completely untouched (`Running`, 0 restarts, unchanged 17h age) and
 `pg_isready` against the live pod still reports accepting connections.
 
+Sealed Secrets controller adoption (`k8s/argocd/apps/sealed-secrets.yaml`)
+used the same multi-source pattern, chart pinned to `2.19.1`. The real
+risk here isn't statefulness — it's that the controller holds the
+keypair decrypting every SealedSecret in the cluster, and a bad sync
+regenerating/replacing that keypair Secret would silently break
+decryption for everything else at once. That risk is structurally
+bounded, not just hoped away: the chart never templates the active
+keypair Secret (`sealed-secrets-key<random>`, controller-generated at
+first boot with a random name suffix the chart can't predict) —
+confirmed via `helm template` producing no `Secret` resource at all,
+and independently via `GET /api/v1/applications/sealed-secrets/managed-resources`
+showing no `Secret` in this Application's managed set, so no sync this
+Application ever performs can touch it. Verified anyway, not just
+assumed: the keypair Secret's `tls.crt`/`tls.key` data hashed
+byte-for-byte identical (sha256) before and after the real sync, same
+Secret UID throughout, controller pod UID unchanged. Real functional
+check: sealed a throwaway test secret with `kubeseal` against the
+running (post-adoption) controller, applied it, confirmed it decrypted
+correctly, cleaned up — proving the exact same keypair is still fully
+operational, not just present.
+
 One correction to decision 1's wording: the sealed secret is ArgoCD's
 real repo-credential secret shape (`Opaque`, labeled
 `argocd.argoproj.io/secret-type: repository`, keys `type`/`url`/`sshPrivateKey`),
@@ -1173,15 +1197,18 @@ against the real private repo.
       connection state `Successful` via the ArgoCD API
 - [ ] Root `Application` (app-of-apps) manages one child `Application`
       per existing release — **partial**: landing-page, kube-state-metrics,
-      node-exporter, Prometheus, Grafana, Jenkins, and Postgres Operator
-      adopted so far, all without a disruptive reinstall — confirmed via
-      `kubectl get pods`: identical pod UID(s), 0 restarts, unchanged age
-      before and after each real sync (Prometheus, Grafana, and Jenkins
-      additionally confirmed via each PVC's UID/backing volume unchanged,
-      Jenkins further confirmed via intact build history and
-      credentials, Postgres Operator further confirmed via the actual
-      `proxmox-iac-pg` postgresql CR/pod being completely untouched and
-      still accepting connections). The other 3 services remain
+      node-exporter, Prometheus, Grafana, Jenkins, Postgres Operator, and
+      Sealed Secrets adopted so far, all without a disruptive reinstall —
+      confirmed via `kubectl get pods`: identical pod UID(s), 0 restarts,
+      unchanged age before and after each real sync (Prometheus, Grafana,
+      and Jenkins additionally confirmed via each PVC's UID/backing
+      volume unchanged, Jenkins further confirmed via intact build
+      history and credentials, Postgres Operator further confirmed via
+      the actual `proxmox-iac-pg` postgresql CR/pod being completely
+      untouched and still accepting connections, Sealed Secrets further
+      confirmed via its keypair Secret's data hashed byte-for-byte
+      identical before/after and a live seal-apply-decrypt round trip
+      still working post-adoption). The other 2 services remain
       un-adopted and un-stubbed.
 - [x] Every `Application`, including the root, set to manual sync —
       both `root-app.yaml` and `apps/landing-page.yaml` have `syncPolicy: {}`,
