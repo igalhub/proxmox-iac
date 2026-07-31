@@ -1075,25 +1075,55 @@ assumed to be clean just because it's the documented pattern.
    (stateless, already behind its own Deployment) — before touching
    Postgres/Redis, so a bad adoption is caught on something disposable.
 
+**Partial slice landed 2026-07-31 (branch
+`feature/PX-015-argocd-landing-page-adoption`) — ArgoCD installed and the
+landing page adopted only. This is deliberate, not a shortcut: the
+remaining 9 services (nginx-ingress, Redis, Postgres operator,
+kube-state-metrics, node-exporter, Prometheus, Grafana, Jenkins, Sealed
+Secrets) are still plain `helm install`/`kubectl apply` and their
+adoption is a separate future session/PR. Do not treat this ticket as
+DONE and do not check the "one child `Application` per existing release"
+box until that full adoption actually happens.**
+
+One correction to decision 1's wording: the sealed secret is ArgoCD's
+real repo-credential secret shape (`Opaque`, labeled
+`argocd.argoproj.io/secret-type: repository`, keys `type`/`url`/`sshPrivateKey`),
+not a literal `kubernetes.io/ssh-auth` typed secret — ArgoCD only
+recognizes repo credentials in that shape, confirmed live via
+`GET /api/v1/repositories` showing `connectionState.status: Successful`
+against the real private repo.
+
 **Acceptance criteria:**
-- [ ] ArgoCD installed via Helm on `wk-1`, reachable at `argocd.lab.test`
-      through nginx-ingress
-- [ ] ArgoCD has its own dedicated read-only deploy key, confirmed
-      working against a real sync (not just secret-exists)
+- [x] ArgoCD installed via Helm on `wk-1`, reachable at `argocd.lab.test`
+      through nginx-ingress — confirmed `kubectl get pods -n argocd -o wide`
+      (all pods on `wk-1`) and `curl -H "Host: argocd.lab.test"` through
+      the real nginx-ingress NodePort returning HTTP 200
+- [x] ArgoCD has its own dedicated read-only deploy key, confirmed
+      working against a real sync (not just secret-exists) — GitHub deploy
+      key id 158880510, distinct from Jenkins's (158838165); repo
+      connection state `Successful` via the ArgoCD API
 - [ ] Root `Application` (app-of-apps) manages one child `Application`
-      per existing release (nginx-ingress, Redis, Postgres operator,
-      kube-state-metrics, node-exporter, Prometheus, Grafana, Jenkins,
-      Sealed Secrets, landing page) — adopted without a disruptive
-      reinstall, confirmed via `kubectl get pods` showing no unexpected
-      restarts/recreations during adoption
-- [ ] Every `Application`, including the root, set to manual sync —
-      confirmed no auto-prune/self-heal enabled anywhere
-- [ ] Each `Application` shows `Synced`/`Healthy` in the ArgoCD UI after
-      a real, manually-triggered sync against actual live state
-- [ ] `docs/SPEC.md` build order and architecture diagram updated to
-      reflect ArgoCD as the actual reconciler, not a planned one
-- [ ] `docs/PRD.md` ArgoCD success criterion wording confirmed to match
-      the manual-sync decision above
+      per existing release — **partial**: only the landing-page child
+      exists (`k8s/argocd/apps/landing-page.yaml`). Adopted without a
+      disruptive reinstall — confirmed via `kubectl get pods -n landing-page`:
+      identical pod UID, 0 restarts, unchanged age before and after the
+      real sync. The other 9 services remain un-adopted and un-stubbed.
+- [x] Every `Application`, including the root, set to manual sync —
+      both `root-app.yaml` and `apps/landing-page.yaml` have `syncPolicy: {}`,
+      confirmed no auto-prune/self-heal
+- [x] Each `Application` shows `Synced`/`Healthy` in the ArgoCD UI after
+      a real, manually-triggered sync against actual live state — verified
+      via the ArgoCD API against the feature branch pre-merge (root-app's
+      `targetRevision` temporarily pointed at the branch since
+      `k8s/argocd/apps/` doesn't exist on `master` until this PR merges;
+      committed files target `master`, matching the intended
+      steady-state — a follow-up sync against `master` happens right after
+      merge)
+- [ ] `docs/SPEC.md` build order and architecture diagram — not yet
+      updated for this partial slice; will land with the full adoption
+      ticket once all 10 services are under ArgoCD, not piecemeal per slice
+- [ ] `docs/PRD.md` ArgoCD success criterion wording — same, deferred to
+      the full-adoption close-out
 
 ## PX-016 — Resolve Proxmox memory-gauge inaccuracy (wk-1/wk-2)
 
