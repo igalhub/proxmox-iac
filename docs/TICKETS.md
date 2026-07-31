@@ -1435,10 +1435,10 @@ and worth switching to instead of stopping at step 3 above.
 
 ## PX-018 — Stop relying on a personal global gitignore for `*.tfvars`
 
-**Status:** OPEN — not blocking, no urgency, but a real gap: found during
-PX-015's independent close-out verification (not part of PX-015's own
-scope, filed separately per this repo's "no bundling unrelated changes"
-rule).
+**Status:** DONE — closed out 2026-07-31 (PR #51, `6a8ad7d`). Found
+during PX-015's independent close-out verification (not part of PX-015's
+own scope, filed and implemented separately per this repo's "no bundling
+unrelated changes" rule).
 
 **Background:** `terraform/terraform.tfvars` is currently untracked, but
 `.gitignore`'s own comment on the `*.tfvars` line says coverage comes
@@ -1465,17 +1465,17 @@ real, not just present in the file — `git check-ignore -v` should
 attribute the ignore to this repo's `.gitignore`, not `~/.gitignore_global`.
 
 **Acceptance criteria:**
-- [ ] `.gitignore` has an explicit `*.tfvars` rule, `!*.tfvars.example`
+- [x] `.gitignore` has an explicit `*.tfvars` rule, `!*.tfvars.example`
       negation preserved
-- [ ] `git check-ignore -v terraform/terraform.tfvars` confirms the
-      match comes from this repo's `.gitignore`, not the personal global
-      file
-- [ ] Stale comment claiming global-gitignore coverage removed/corrected
-- [ ] `git log --all -- terraform/terraform.tfvars` confirmed empty —
-      i.e. this ticket is closing a future risk, not papering over a
-      token that's already sitting in git history needing separate
-      remediation
-- [ ] No unrelated changes bundled into this PR
+- [x] `git check-ignore -v terraform/terraform.tfvars` confirms the
+      match comes from this repo's `.gitignore` (`.gitignore:12`), not
+      the personal global file
+- [x] Stale comment claiming global-gitignore coverage removed/corrected
+- [x] `git log --all -- terraform/terraform.tfvars` confirmed empty —
+      this ticket closed a future risk, not an already-leaked token
+      needing separate remediation
+- [x] No unrelated changes bundled into this PR — diff was `.gitignore`
+      only
 
 ---
 
@@ -1510,4 +1510,4 @@ attribute the ignore to this repo's `.gitignore`, not `~/.gitignore_global`.
 | PX-015 | ArgoCD retrofit | DONE |
 | PX-016 | Resolve Proxmox memory-gauge inaccuracy (wk-1/wk-2) | OPEN |
 | PX-017 | Narrow ghcr.io push token scope once repo is public | OPEN |
-| PX-018 | Stop relying on a personal global gitignore for `*.tfvars` | OPEN |
+| PX-018 | Stop relying on a personal global gitignore for `*.tfvars` | DONE |
