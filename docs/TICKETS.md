@@ -1926,6 +1926,28 @@ already running on Longhorn; both `master`/`replica` blocks now declare
 committing — confirmed no secret material anywhere in either file's
 diff, same discipline as PX-018.
 
+**A real (non-cosmetic) gap found and fixed while pre-merge-testing the
+Redis fix, not left as permanent drift:** syncing the corrected
+`k8s/redis/values.yaml` against the live cluster failed —
+`StatefulSet.apps "redis-master/replicas" is invalid: ... updates to
+statefulset spec for fields other than 'replicas', 'ordinals',
+'template', ... are forbidden` — `volumeClaimTemplates` is immutable on
+an existing StatefulSet in Kubernetes, confirmed via a real sync attempt
+(safe: the API server rejects the patch outright, nothing was touched —
+both pods' UID and restart count confirmed identical before/after).
+Left unfixed, this wasn't just cosmetic `OutOfSync` noise: any future
+scale-up of either StatefulSet would have silently created a new
+replica's PVC on `local-path`, not `longhorn`, since the template field
+was frozen at its original (unset) value forever. Fixed for real via
+`kubectl delete statefulset redis-master redis-replicas --cascade=orphan`
+(removes only the StatefulSet controller objects, not the pods or PVCs)
+followed by a clean ArgoCD re-sync, which recreated both StatefulSets
+with the correct template and adopted the existing pods/PVCs without
+touching any data. Verified: `volumeClaimTemplates[0].spec.storageClassName`
+now genuinely `longhorn` on both, both pods' UID and restart count
+(`0`) identical throughout, data confirmed intact (`GET px009-check` →
+`"ok"`).
+
 **`docs/SPEC.md` updated** (§5 rewritten with the real storage
 architecture, disk budget, and replication-factor rationale; the top
 status header and §8's build-order item 9 both updated to reflect
