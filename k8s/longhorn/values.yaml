@@ -1,0 +1,45 @@
+# Storage restricted to wk-1/wk-2 only — cp-1 stays workload-free by
+# design (docs/SPEC.md §1: tainted, no application workloads scheduled).
+# Both node selectors below target the `longhorn-storage=true` label
+# applied to wk-1/wk-2 (`kubectl label node wk-1/wk-2 longhorn-storage=true`
+# — not yet codified in Ansible, a known gap noted in docs/TICKETS.md
+# PX-022, since a fresh node rebuild would lose it).
+#
+# Real disk headroom confirmed live before choosing replicationFactor=2
+# (see k8s/longhorn/config/storageclass.yaml): wk-1 47GB free (19%
+# used), wk-2 50GB free (14% used) — both single-disk VMs, no separate
+# dedicated disk, so Longhorn uses a directory on the existing root
+# filesystem (defaultDataPath, chart default `/var/lib/longhorn`).
+global:
+  nodeSelector:
+    longhorn-storage: "true"
+
+defaultSettings:
+  systemManagedComponentsNodeSelector: "longhorn-storage:true"
+  # Only 2 real storage nodes exist (wk-1/wk-2) — a 3rd replica would
+  # have nowhere valid to go, so the scheduler must not even attempt it
+  # and silently leave a volume under-replicated.
+  defaultReplicaCount: 2
+
+# Real issue hit and fixed on first sync: ArgoCD translates every Helm
+# hook type (including pre-upgrade) into its own PreSync hook and runs
+# it regardless of whether this is actually a fresh install — the
+# `longhorn-pre-upgrade` Job then blocked forever waiting on a
+# ServiceAccount that only the *normal* (non-hook) chart resources
+# create, which ArgoCD hadn't applied yet since the blocking PreSync
+# hook came first. The chart's own values.yaml documents this exact
+# gotcha: "Disable this setting when installing Longhorn using Argo CD
+# or other GitOps solutions."
+preUpgradeChecker:
+  jobEnabled: false
+
+persistence:
+  # StorageClass itself created explicitly (k8s/longhorn/config/
+  # storageclass.yaml) rather than via the chart's own default-class
+  # machinery, matching this repo's pattern of explicit, reviewable
+  # resource definitions.
+  createStorageClass: false
+  defaultClass: false
+
+longhornUI:
+  replicas: 1

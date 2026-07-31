@@ -1,0 +1,20 @@
+# The `longhorn` StorageClass (k8s/longhorn/config/storageclass.yaml)
+# for the `longhorn` Application above — deliberately separate, synced
+# only after that Application is confirmed Healthy, same pattern as
+# MetalLB's metallb/metallb-config split (PX-021).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: longhorn-config
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: git@github.com:igalhub/proxmox-iac.git
+    targetRevision: master
+    path: k8s/longhorn/config
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: longhorn-system
+  # Manual sync, no auto-prune/self-heal — same discipline as every
+  # other Application in this repo (docs/TICKETS.md PX-015 decision 3).
