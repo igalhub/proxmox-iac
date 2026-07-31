@@ -1087,39 +1087,54 @@ DaemonSet (vs. Deployments so far). Fourth partial slice, same day
 (branch `feature/PX-015-prometheus-adoption`) — Prometheus adopted,
 first release with a PersistentVolumeClaim. Fifth partial slice, same
 day (branch `feature/PX-015-grafana-adoption`) — Grafana adopted,
-second PVC, first Ingress among the Helm-sourced adoptions. This is
-deliberate, not a shortcut: the remaining 5 services (nginx-ingress,
-Redis, Postgres operator, Jenkins, Sealed Secrets) are still plain
-`helm install`/`kubectl apply` and their adoption is separate future
-work. Do not treat this ticket as DONE and do not check the "one child
-`Application` per existing release" box until that full adoption
-actually happens.**
+second PVC, first Ingress among the Helm-sourced adoptions. Sixth
+partial slice, same day (branch `feature/PX-015-jenkins-adoption`) —
+Jenkins adopted, highest-stakes so far: first StatefulSet, real build
+history/config on its PVC, three standalone SealedSecrets it depends on
+correctly left out of the Application. This is deliberate, not a
+shortcut: the remaining 4 services (nginx-ingress, Redis, Postgres
+operator, Sealed Secrets) are still plain `helm install`/`kubectl apply`
+and their adoption is separate future work. Do not treat this ticket as
+DONE and do not check the "one child `Application` per existing
+release" box until that full adoption actually happens.**
 
-kube-state-metrics, node-exporter, Prometheus, and Grafana adoption all
-used a multi-source `Application` (`k8s/argocd/apps/kube-state-metrics.yaml`,
+kube-state-metrics, node-exporter, Prometheus, Grafana, and Jenkins
+adoption all used a multi-source `Application`
+(`k8s/argocd/apps/kube-state-metrics.yaml`,
 `k8s/argocd/apps/node-exporter.yaml`, `k8s/argocd/apps/prometheus.yaml`,
-`k8s/argocd/apps/grafana.yaml`): the Helm chart pulled straight from its
-upstream repo, pinned to the exact version already live
-(`8.0.0`/`4.56.1`/`29.20.0`/`10.5.15`), with the values file staying in
-this repo via the standard `ref: values` pattern — rendered manifests
-matched what was already running byte-for-byte (confirmed: same release
-name produces identical resource names, including PVCs and, for
-Grafana, its Ingress), so each sync only changed ownership/tracking
-metadata, never the resources. Verified via real sync, twice each
-(pre-merge on the feature branch, post-merge against `master`):
-`Synced`/`Healthy`, all tracked resources `Synced`, every pod
-UID/restarts/age unchanged before and after (kube-state-metrics
-`13dedb1e-...`; node-exporter's DaemonSet across all 3 nodes —
-`db678154-...`/`6c05e6df-...`/`02a47c98-...`, all 0 restarts; Prometheus
-`fee155b5-...`; Grafana `23637cc9-...`), and the real functional check
-for each — Prometheus scrape targets confirmed `up` for the two
-exporters; for Prometheus itself, the PVC's UID/backing volume
-unchanged plus a direct query for `up` at a timestamp ~30 minutes before
-the Application existed still returning real data, proving the TSDB was
-genuinely untouched; for Grafana, its own PVC UID/volume unchanged, the
-real ingress health endpoint returning `HTTP 200`, and both provisioned
-dashboards still present via the authenticated API — proving the admin
-secret and settings PVC both survived the adoption intact.
+`k8s/argocd/apps/grafana.yaml`, `k8s/argocd/apps/jenkins.yaml`): the
+Helm chart pulled straight from its upstream repo, pinned to the exact
+version already live (`8.0.0`/`4.56.1`/`29.20.0`/`10.5.15`/`5.9.45`),
+with the values file staying in this repo via the standard
+`ref: values` pattern — rendered manifests matched what was already
+running byte-for-byte (confirmed: same release name produces identical
+resource names, including PVCs and, for Grafana/Jenkins, their
+Ingress), so each sync only changed ownership/tracking metadata, never
+the resources. Verified via real sync, twice each (pre-merge on the
+feature branch, post-merge against `master`): `Synced`/`Healthy`, all
+tracked resources `Synced`, every pod UID/restarts/age unchanged before
+and after (kube-state-metrics `13dedb1e-...`; node-exporter's DaemonSet
+across all 3 nodes — `db678154-...`/`6c05e6df-...`/`02a47c98-...`, all 0
+restarts; Prometheus `fee155b5-...`; Grafana `23637cc9-...`; Jenkins
+`61f35740-...`), and the real functional check for each — Prometheus
+scrape targets confirmed `up` for the two exporters; for Prometheus
+itself, the PVC's UID/backing volume unchanged plus a direct query for
+`up` at a timestamp ~30 minutes before the Application existed still
+returning real data, proving the TSDB was genuinely untouched; for
+Grafana, its own PVC UID/volume unchanged, the real ingress health
+endpoint returning `HTTP 200`, and both provisioned dashboards still
+present via the authenticated API; for Jenkins, the PVC UID/volume
+unchanged, the real ingress `/login` returning `HTTP 200`, all 26
+existing builds of the `proxmox-iac-ci` job still present via the
+authenticated API, and both `kubernetes-credentials-provider`-surfaced
+credentials (`jenkins-github-deploy-key`, `ghcr-push-token`) still
+present — proving Jenkins' own config store, build history, and
+credential wiring all survived the adoption of its highest-stakes
+resource (a StatefulSet) intact. Diff previewed via
+`managed-resources` before syncing — confirmed the StatefulSet's image
+and replica count were unchanged and the PVC's only differences were
+server-populated defaults, not a real change, before committing to the
+sync.
 
 One correction to decision 1's wording: the sealed secret is ArgoCD's
 real repo-credential secret shape (`Opaque`, labeled
@@ -1140,11 +1155,13 @@ against the real private repo.
       connection state `Successful` via the ArgoCD API
 - [ ] Root `Application` (app-of-apps) manages one child `Application`
       per existing release — **partial**: landing-page, kube-state-metrics,
-      node-exporter, Prometheus, and Grafana adopted so far, all without
-      a disruptive reinstall — confirmed via `kubectl get pods`:
+      node-exporter, Prometheus, Grafana, and Jenkins adopted so far, all
+      without a disruptive reinstall — confirmed via `kubectl get pods`:
       identical pod UID(s), 0 restarts, unchanged age before and after
-      each real sync (Prometheus and Grafana additionally confirmed via
-      each PVC's UID/backing volume unchanged). The other 5 services
+      each real sync (Prometheus, Grafana, and Jenkins additionally
+      confirmed via each PVC's UID/backing volume unchanged, Jenkins
+      further confirmed via intact build history and credentials). The
+      other 4 services
       remain un-adopted and un-stubbed.
 - [x] Every `Application`, including the root, set to manual sync —
       both `root-app.yaml` and `apps/landing-page.yaml` have `syncPolicy: {}`,
