@@ -1,0 +1,57 @@
+# Adopts the existing nginx-ingress Helm release (installed directly via
+# `helm install` in PX-009) without a reinstall. Tenth and final PX-015
+# adoption — highest blast radius in the whole ticket by design, saved
+# for last: every other service's ingress traffic (including ArgoCD's
+# own UI) routes through this single-replica controller.
+#
+# Real, non-obvious risk found and planned around before syncing (not
+# discovered after the fact): this chart bundles Helm hook Jobs
+# (pre-install/pre-upgrade/post-install/post-upgrade) that regenerate
+# the admission webhook's self-signed TLS cert and patch the
+# ValidatingWebhookConfiguration's CA bundle on every sync — a
+# well-documented gotcha when retrofitting GitOps onto ingress-nginx.
+# ArgoCD translates Helm hooks to its own sync hooks, so this sync
+# genuinely re-runs that cert rotation, but the already-running
+# controller pod (no second replica) keeps serving the old cert from its
+# already-mounted volume until it restarts — a real CA/cert mismatch
+# window where any *new* Ingress create/update in the cluster would be
+# rejected by the webhook's `failurePolicy: Fail`, not a routing outage
+# for existing traffic. Deliberately closed immediately after this
+# Application's first real sync with one controlled
+# `kubectl rollout restart deployment/ingress-nginx-controller`, not
+# left open — a few seconds of self-inflicted, understood downtime
+# beats an invisible mismatch that fails at some unrelated future
+# moment. See docs/TICKETS.md PX-015 for the full verification trail.
+#
+# Multi-source Application, same shape as the other Helm-sourced
+# adoptions: chart from its upstream repo pinned to the exact version
+# already live (4.15.1), values file stays in this repo via the
+# `ref: values` source. Release name `ingress-nginx` matches the live
+# release, so every rendered resource name — including the NodePort
+# Service's fixed port assignments (30963/31395, used by every curl
+# check throughout this whole PX-015 body of work) — is identical to
+# what's already running.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: nginx-ingress
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://kubernetes.github.io/ingress-nginx
+      chart: ingress-nginx
+      targetRevision: 4.15.1
+      helm:
+        releaseName: ingress-nginx
+        valueFiles:
+          - $values/k8s/nginx-ingress/values.yaml
+    - repoURL: git@github.com:igalhub/proxmox-iac.git
+      targetRevision: master
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ingress-nginx
+  # Manual sync, no auto-prune/self-heal (docs/TICKETS.md PX-015
+  # decision 3) — adoption itself happens via one explicit, reviewed
+  # sync, not automatically the moment this Application is created.
