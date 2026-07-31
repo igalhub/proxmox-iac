@@ -1,0 +1,38 @@
+# Adopts the existing node-exporter Helm release (installed directly
+# via `helm install` in PX-010) without a reinstall. Third PX-015
+# adoption, same pattern as kube-state-metrics: pure metrics exporter,
+# no ingress, no dependents. First DaemonSet adopted rather than a
+# Deployment — same before/after pod-identity verification discipline,
+# just across all 3 nodes' pods instead of one.
+#
+# Multi-source Application, same shape as kube-state-metrics.yaml: Helm
+# chart from its upstream repo pinned to the exact version already live
+# (4.56.1, matches k8s/node-exporter/values.yaml's release), values file
+# stays in this repo via the `ref: values` source. Release name
+# `node-exporter` matches the live release, so rendered resource names
+# (`node-exporter-prometheus-node-exporter` for the ServiceAccount/
+# Service/DaemonSet) are identical to what's already running.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: node-exporter
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://prometheus-community.github.io/helm-charts
+      chart: prometheus-node-exporter
+      targetRevision: 4.56.1
+      helm:
+        releaseName: node-exporter
+        valueFiles:
+          - $values/k8s/node-exporter/values.yaml
+    - repoURL: git@github.com:igalhub/proxmox-iac.git
+      targetRevision: master
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  # Manual sync, no auto-prune/self-heal (docs/TICKETS.md PX-015
+  # decision 3) — adoption itself happens via one explicit, reviewed
+  # sync, not automatically the moment this Application is created.
