@@ -1,0 +1,50 @@
+# Adopts the existing Redis Helm release (installed directly via
+# `helm install` in PX-009) without a reinstall. Ninth PX-015 adoption,
+# two StatefulSets (primary + replica) with two PVCs. Genuinely lower
+# risk than "stateful" implies, confirmed before adopting rather than
+# assumed: no application in this repo (landing page, Jenkinsfile) ever
+# references Redis, and the only key in the live database is
+# `px009-check` — a leftover string from PX-009's original install
+# verification, not real data. Nothing downstream depends on this
+# service's persisted state yet. Same PVC-identity verification
+# discipline as every prior stateful adoption still applies, though —
+# proving the pattern holds even when there's a volume involved, not
+# skipping the check just because the stakes are lower here.
+#
+# References the existing k8s/redis/redis-auth-sealedsecret.yaml via
+# `auth.existingSecret`, same as Grafana/Jenkins's admin secrets — that
+# SealedSecret stays out of this Application on purpose, it's not
+# templated by this chart.
+#
+# Multi-source Application, same shape as the other Helm-sourced
+# adoptions: chart from its upstream repo pinned to the exact version
+# already live (27.0.18), values file stays in this repo via the
+# `ref: values` source. Release name `redis` matches the live release,
+# so every rendered resource name — including both
+# `PersistentVolumeClaim`s and both `StatefulSet`s
+# (`redis-master`/`redis-replicas`) — is identical to what's already
+# running.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: redis
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://charts.bitnami.com/bitnami
+      chart: redis
+      targetRevision: 27.0.18
+      helm:
+        releaseName: redis
+        valueFiles:
+          - $values/k8s/redis/values.yaml
+    - repoURL: git@github.com:igalhub/proxmox-iac.git
+      targetRevision: master
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: redis
+  # Manual sync, no auto-prune/self-heal (docs/TICKETS.md PX-015
+  # decision 3) — adoption itself happens via one explicit, reviewed
+  # sync, not automatically the moment this Application is created.
