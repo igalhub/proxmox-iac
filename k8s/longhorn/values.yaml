@@ -21,6 +21,18 @@ defaultSettings:
   # and silently leave a volume under-replicated.
   defaultReplicaCount: 2
 
+# Real issue hit and fixed on first sync: ArgoCD translates every Helm
+# hook type (including pre-upgrade) into its own PreSync hook and runs
+# it regardless of whether this is actually a fresh install — the
+# `longhorn-pre-upgrade` Job then blocked forever waiting on a
+# ServiceAccount that only the *normal* (non-hook) chart resources
+# create, which ArgoCD hadn't applied yet since the blocking PreSync
+# hook came first. The chart's own values.yaml documents this exact
+# gotcha: "Disable this setting when installing Longhorn using Argo CD
+# or other GitOps solutions."
+preUpgradeChecker:
+  jobEnabled: false
+
 persistence:
   # StorageClass itself created explicitly (k8s/longhorn/config/
   # storageclass.yaml) rather than via the chart's own default-class
