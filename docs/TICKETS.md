@@ -1317,8 +1317,46 @@ against the real private repo.
 
 ## PX-016 — Resolve Proxmox memory-gauge inaccuracy (wk-1/wk-2)
 
-**Status:** OPEN — not blocking, no urgency; do when convenient, not
-before PX-014/PX-015.
+**Status:** DONE — closed out 2026-07-31. Theory confirmed on both nodes:
+Proxmox negotiates the guest-agent memory-stat capability at VM boot
+time, and the live agent install (PX-007) never retroactively activated
+it. A graceful reboot did.
+
+**Verification, wk-1 (VMID 111):** baseline `mem: 8632373248` /
+`maxmem: 8589934592` (just over 100%) before restart. Confirmed idle
+first — Postgres (`proxmox-iac-pg-0`) and Redis
+(`redis-master-0`/`redis-replicas-0`) both 21h uptime, zero restarts, no
+in-progress work. `qm reboot 111`, confirmed via guest-agent `uptime -s`
+that a real reboot happened (boot time ~5 min prior, vs. the previous
+21h uptime). Post-reboot: `mem: 3559424000` (~41%) — accurate. All pods
+that were on wk-1 (ArgoCD, ingress-nginx, landing page, Grafana,
+Prometheus, Postgres, Redis) came back `Running` with exactly 1 restart
+each (a clean node reboot, not a crash), node `Ready`.
+
+**Verification, wk-2 (VMID 112):** checked for an in-progress Jenkins
+build before touching it — one was running at the time PX-016 started
+(a fresh agent pod, 85s old), so wk-2 was held until it finished, then
+re-checked clean before proceeding. Baseline `mem: 8631488512` /
+`maxmem: 8589934592`, same ~100%+ pattern as wk-1. `qm reboot 112`,
+confirmed via guest-agent boot time. Post-reboot: `mem: 2515034112`
+(~29%) — accurate, matching `kubectl top nodes`' real 15%.
+
+**Real bug found and fixed along the way, not just "restart and hope":**
+`jenkins-0` crash-looped after the reboot (`CrashLoopBackOff` on its
+`init` init-container, exit code 1). Root cause, diagnosed via
+`kubectl logs`/`describe`, not guessed: the init container's plugin-copy
+step runs `cp` without `-f`; its target, `/var/jenkins_plugins`, is an
+`emptyDir` volume whose on-disk directory (under kubelet's local pod
+storage) survived the *graceful* VM reboot — unlike a pod deletion, the
+node coming back up didn't wipe it. `cp` hit already-existing files,
+its interactive overwrite prompts got instant EOF (no stdin in a
+container), and it exited 1. Not a data-loss risk — Jenkins's actual
+home/config lives on the separate `jenkins` PVC, untouched throughout.
+Fixed with a normal, non-destructive `kubectl delete pod jenkins-0`
+(StatefulSet recreated it fresh, clean `emptyDir`) — `2/2 Running`,
+0 restarts on the new pod. Real functional check after: `HTTP 200` on
+`/login` through the actual nginx-ingress NodePort with a
+`Host: jenkins.lab.test` header, not just "pod looks fine."
 
 **Background:** PX-007's `qemu-guest-agent` correction fixed the missing
 agent (install verified, `qm agent ping` succeeds on all 3 VMs) but did
@@ -1362,13 +1400,15 @@ running straight through:**
    closing decision, not a failure to reach one.
 
 **Acceptance criteria:**
-- [ ] wk-1 and wk-2 both restarted, memory reading checked immediately after each
-- [ ] If inaccurate post-restart: `pvestatd` logs checked for a real error
-- [ ] If still inconclusive: balloon-device change proposed via Terraform,
-      plan reviewed before apply
-- [ ] Either the gauge is confirmed fixed (with the reason documented), or
+- [x] wk-1 and wk-2 both restarted, memory reading checked immediately after each
+- [x] If inaccurate post-restart: `pvestatd` logs checked for a real error —
+      not needed, both nodes were accurate immediately after their reboot
+- [x] If still inconclusive: balloon-device change proposed via Terraform,
+      plan reviewed before apply — not needed, resolved at step 2
+- [x] Either the gauge is confirmed fixed (with the reason documented), or
       a formal decision to rely on in-cluster Grafana instead is recorded
-      — ticket closes with one of these two outcomes, not left hanging
+      — gauge confirmed fixed, reason documented above (guest-agent
+      memory-stat capability negotiated at boot, not live-activatable)
 
 ---
 
@@ -1508,6 +1548,6 @@ attribute the ignore to this repo's `.gitignore`, not `~/.gitignore_global`.
 | PX-013 | Jenkins CI (Helm) with a real pipeline | DONE |
 | PX-014 | Landing page (live Prometheus metrics, real app) | DONE |
 | PX-015 | ArgoCD retrofit | DONE |
-| PX-016 | Resolve Proxmox memory-gauge inaccuracy (wk-1/wk-2) | OPEN |
+| PX-016 | Resolve Proxmox memory-gauge inaccuracy (wk-1/wk-2) | DONE |
 | PX-017 | Narrow ghcr.io push token scope once repo is public | OPEN |
 | PX-018 | Stop relying on a personal global gitignore for `*.tfvars` | DONE |
