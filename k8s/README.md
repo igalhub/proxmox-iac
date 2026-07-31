@@ -1,14 +1,13 @@
 # k8s/ — Helm values, manifests, ArgoCD app defs
 
 Per `docs/SPEC.md` §7 build order, ArgoCD retrofit (step 8) started
-after the core services were stable. It's in progress, not complete:
-3 of 10 existing releases (landing page, kube-state-metrics,
-node-exporter) are adopted under ArgoCD so far — nginx-ingress, Redis,
-Postgres operator, Prometheus, Grafana, Jenkins, and Sealed Secrets are
-still applied directly via plain `helm install`/`kubectl apply`. This
-directory is the record of exactly what was installed and how, so each
-remaining release can be retrofitted under ArgoCD without
-reverse-engineering it.
+after the core services were stable and is now complete: all 10
+existing releases (landing page, kube-state-metrics, node-exporter,
+Prometheus, Grafana, Jenkins, Postgres operator, Sealed Secrets, Redis,
+nginx-ingress) are adopted under ArgoCD — none remain as one-off `helm
+install`/`kubectl apply`. This directory is the record of exactly what
+was installed and how, so the ArgoCD adoption trail in `docs/TICKETS.md`
+PX-015 didn't have to reverse-engineer it.
 
 ## What's installed (PX-009)
 
@@ -164,7 +163,7 @@ doesn't silently lose it again). Full trail in `docs/TICKETS.md` under
 **PX-008**, not PX-010 — that's where the actual defect was, even though
 PX-010 (node-exporter needing to run on `cp-1` too) is what surfaced it.
 
-## What's installed (PX-015, in progress)
+## What's installed (PX-015, done)
 
 | Component | Namespace | Install |
 |---|---|---|
@@ -198,14 +197,21 @@ resource-identity comparison):
 | Landing page | `k8s/argocd/apps/landing-page.yaml` | Raw manifests, git source pointed straight at `k8s/landing-page/` |
 | kube-state-metrics | `k8s/argocd/apps/kube-state-metrics.yaml` | Multi-source: upstream Helm chart pinned to the exact live version (`8.0.0`) + values file from this repo via `ref: values` |
 | node-exporter | `k8s/argocd/apps/node-exporter.yaml` | Same multi-source pattern, chart pinned to `4.56.1` — first DaemonSet adopted (vs. Deployments) |
+| Prometheus | `k8s/argocd/apps/prometheus.yaml` | Multi-source, chart pinned to the exact live version |
+| Grafana | `k8s/argocd/apps/grafana.yaml` | Multi-source, chart pinned to the exact live version |
+| Jenkins | `k8s/argocd/apps/jenkins.yaml` | Multi-source, chart pinned to the exact live version |
+| Postgres Operator | `k8s/argocd/apps/postgres-operator.yaml` | Multi-source; scoped to the operator's own controller only — the `postgresql` CR/pod it manages was never part of this adoption list |
+| Sealed Secrets | `k8s/argocd/apps/sealed-secrets.yaml` | Multi-source; verified beyond pod identity — the controller's keypair Secret confirmed byte-for-byte unchanged, plus a live seal→apply→decrypt round trip post-adoption |
+| Redis | `k8s/argocd/apps/redis.yaml` | Multi-source, chart pinned to the exact live version — two StatefulSets/PVCs, PVC identity verified unchanged |
+| nginx-ingress | `k8s/argocd/apps/nginx-ingress.yaml` | Multi-source, chart pinned to the exact live version — final and highest-blast-radius adoption, full risk investigation and verification trail in `docs/TICKETS.md` PX-015 |
 
 Every `Application`, including the root, is manual-sync only (no
 auto-prune/self-heal) — reconciliation against live state always
 requires an explicit, reviewed sync, consistent with every other
 state-changing action in this project.
 
-Remaining: nginx-ingress, Redis, Postgres operator, Prometheus,
-Grafana, Jenkins, Sealed Secrets — still installed exactly as documented
-in the sections above, not yet under ArgoCD. Postgres/Redis are
-deliberately saved for last (stateful, higher blast radius if an
-adoption goes wrong) — see `docs/TICKETS.md` PX-015 decision 4.
+All 10 releases are now adopted — none remain as one-off `helm
+install`/`kubectl apply`. Postgres/Redis were deliberately saved for
+later in the adoption order (stateful, higher blast radius if an
+adoption goes wrong), with nginx-ingress saved for last of all — see
+`docs/TICKETS.md` PX-015 decision 4 and the full adoption trail.

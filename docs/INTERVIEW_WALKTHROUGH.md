@@ -311,7 +311,7 @@ an interview.
 
 ---
 
-## Step 11 — ArgoCD retrofit (PX-015, in progress)
+## Step 11 — ArgoCD retrofit (PX-015, done)
 
 **What it is:** ArgoCD watches a path in this Git repo containing
 manifests/Helm releases and continuously reconciles the live cluster to
@@ -322,7 +322,7 @@ in one pass: landing page adopted first (stateless, disposable, lowest
 risk if the adoption pattern turned out to be wrong), then two pure
 metrics exporters (kube-state-metrics, node-exporter) to prove it again
 on a Helm-sourced release and then a DaemonSet, before ever touching
-anything stateful. 3 of 10 releases adopted so far.
+anything stateful. All 10 releases are now adopted.
 
 **Why ArgoCD over Flux:** ArgoCD ships a web UI showing sync status,
 Git-vs-live diffs, and app health, all visible and clickable — which
@@ -384,10 +384,8 @@ services (ingress/Redis/Postgres/Sealed Secrets), observability
 (Prometheus/Grafana in-cluster), Jenkins with a real,
 SCM-poll-verified pipeline, and the landing page — built, deployed via
 its own Jenkins-driven kaniko build/push, and proven live against real
-cluster data. **Step 11 (ArgoCD, PX-015) is in progress**: ArgoCD is
-installed and 3 of 10 existing releases (landing page,
-kube-state-metrics, node-exporter) are adopted under GitOps, each
-verified without disrupting the running workload. Remaining:
-nginx-ingress, Redis, Postgres operator, Prometheus, Grafana, Jenkins,
-Sealed Secrets — Postgres/Redis saved for last since they're stateful.
-Live status: `docs/TICKETS.md`.
+cluster data. **Step 11 (ArgoCD, PX-015) is done**: ArgoCD is installed
+and all 10 existing releases (landing page, kube-state-metrics,
+node-exporter, Prometheus, Grafana, Jenkins, Postgres operator, Sealed
+Secrets, Redis, nginx-ingress) are adopted under GitOps, each verified
+without disrupting the running workload. Live status: `docs/TICKETS.md`.
