@@ -1,0 +1,33 @@
+# Storage restricted to wk-1/wk-2 only — cp-1 stays workload-free by
+# design (docs/SPEC.md §1: tainted, no application workloads scheduled).
+# Both node selectors below target the `longhorn-storage=true` label
+# applied to wk-1/wk-2 (`kubectl label node wk-1/wk-2 longhorn-storage=true`
+# — not yet codified in Ansible, a known gap noted in docs/TICKETS.md
+# PX-022, since a fresh node rebuild would lose it).
+#
+# Real disk headroom confirmed live before choosing replicationFactor=2
+# (see k8s/longhorn/config/storageclass.yaml): wk-1 47GB free (19%
+# used), wk-2 50GB free (14% used) — both single-disk VMs, no separate
+# dedicated disk, so Longhorn uses a directory on the existing root
+# filesystem (defaultDataPath, chart default `/var/lib/longhorn`).
+global:
+  nodeSelector:
+    longhorn-storage: "true"
+
+defaultSettings:
+  systemManagedComponentsNodeSelector: "longhorn-storage:true"
+  # Only 2 real storage nodes exist (wk-1/wk-2) — a 3rd replica would
+  # have nowhere valid to go, so the scheduler must not even attempt it
+  # and silently leave a volume under-replicated.
+  defaultReplicaCount: 2
+
+persistence:
+  # StorageClass itself created explicitly (k8s/longhorn/config/
+  # storageclass.yaml) rather than via the chart's own default-class
+  # machinery, matching this repo's pattern of explicit, reviewable
+  # resource definitions.
+  createStorageClass: false
+  defaultClass: false
+
+longhornUI:
+  replicas: 1

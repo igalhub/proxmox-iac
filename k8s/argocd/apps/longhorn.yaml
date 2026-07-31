@@ -1,0 +1,36 @@
+# PX-022's distributed storage layer — another brand-new service
+# installed directly through ArgoCD (like MinIO/PX-020, MetalLB/PX-021),
+# not an adoption of a pre-existing `helm install`. `syncOptions:
+# CreateNamespace=true` handles the `longhorn-system` namespace
+# declaratively.
+#
+# The StorageClass itself is a *separate* Application
+# (longhorn-config.yaml) synced after this one — Longhorn's own CRDs/
+# provisioner have to exist before a StorageClass referencing
+# `driver.longhorn.io` is meaningful.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: longhorn
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://charts.longhorn.io
+      chart: longhorn
+      targetRevision: 1.12.0
+      helm:
+        releaseName: longhorn
+        valueFiles:
+          - $values/k8s/longhorn/values.yaml
+    - repoURL: git@github.com:igalhub/proxmox-iac.git
+      targetRevision: master
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: longhorn-system
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+  # Manual sync, no auto-prune/self-heal — same discipline as every
+  # other Application in this repo (docs/TICKETS.md PX-015 decision 3).
