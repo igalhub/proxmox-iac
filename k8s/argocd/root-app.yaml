@@ -20,12 +20,13 @@ spec:
     repoURL: git@github.com:igalhub/proxmox-iac.git
     targetRevision: master
     path: k8s/argocd/apps
-    directory:
-      recurse: false
   destination:
     server: https://kubernetes.default.svc
     namespace: argocd
   # Manual sync, no auto-prune/self-heal — every reconciliation against
   # live state requires an explicit, reviewed sync action
   # (docs/TICKETS.md PX-015 decision 3; CLAUDE.md Reversibility section).
-  syncPolicy: {}
+  # syncPolicy/directory left unset, not `{}` — see
+  # k8s/argocd/apps/landing-page.yaml's comment for why (same cosmetic
+  # OutOfSync fix, applied here for consistency even though nothing
+  # currently manages root-app itself as a child resource).

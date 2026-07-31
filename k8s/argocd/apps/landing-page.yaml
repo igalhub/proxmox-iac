@@ -16,12 +16,17 @@ spec:
     repoURL: git@github.com:igalhub/proxmox-iac.git
     targetRevision: master
     path: k8s/landing-page
-    directory:
-      recurse: false
   destination:
     server: https://kubernetes.default.svc
     namespace: landing-page
   # Manual sync, no auto-prune/self-heal (docs/TICKETS.md PX-015
   # decision 3) — adoption itself happens via one explicit, reviewed
   # sync, not automatically the moment this Application is created.
-  syncPolicy: {}
+  # syncPolicy left unset rather than `{}`: ArgoCD's own controller
+  # persists this Application's live spec without an empty syncPolicy/
+  # directory block, so declaring them explicitly here only produced a
+  # permanent cosmetic OutOfSync on the parent root-app (confirmed via
+  # `argocd app manifests`/`managed-resources` diff, PX-015 follow-up).
+  # Omitting them is functionally identical: unset syncPolicy is still
+  # manual/no-automation, and no Helm/Kustomize config still resolves to
+  # a plain Directory source.
