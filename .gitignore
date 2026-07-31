@@ -5,8 +5,11 @@ HANDOFF.md
 **/.terraform/*
 *.tfstate
 *.tfstate.*
-# *.tfvars itself is already covered by ~/.gitignore_global; the
-# example-file negation still needs to live here.
+# Explicit rule (PX-018) — previously relied on ~/.gitignore_global for
+# *.tfvars coverage, a personal machine-local file this repo can't
+# enforce or guarantee exists on a fresh clone/CI/another machine.
+# terraform.tfvars holds a real Proxmox API token.
+*.tfvars
 !*.tfvars.example
 crash.log
 crash.*.log
