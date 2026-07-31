@@ -1,0 +1,42 @@
+# Adopts the existing Jenkins Helm release (installed directly via
+# `helm install` in PX-013) without a reinstall. Sixth PX-015 adoption,
+# highest-stakes so far: a StatefulSet (not Deployment/DaemonSet) with a
+# PVC holding real build history and Jenkins' own config store, plus
+# three standalone SealedSecrets it depends on
+# (jenkins-admin, jenkins-github-deploy-key, jenkins-ghcr) that stay out
+# of this Application on purpose, same reasoning as Grafana's admin
+# secret — they're not templated by this chart, ArgoCD only needs to
+# read what they decrypt into.
+#
+# Multi-source Application, same shape as the other Helm-sourced
+# adoptions: chart from its upstream repo pinned to the exact version
+# already live (5.9.45), values file stays in this repo via the
+# `ref: values` source. Release name `jenkins` matches the live
+# release, so every rendered resource name — including
+# `PersistentVolumeClaim/jenkins`, `StatefulSet/jenkins`
+# (pod `jenkins-0`), and `Ingress/jenkins` — is identical to what's
+# already running.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: jenkins
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://charts.jenkins.io
+      chart: jenkins
+      targetRevision: 5.9.45
+      helm:
+        releaseName: jenkins
+        valueFiles:
+          - $values/k8s/jenkins/values.yaml
+    - repoURL: git@github.com:igalhub/proxmox-iac.git
+      targetRevision: master
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: jenkins
+  # Manual sync, no auto-prune/self-heal (docs/TICKETS.md PX-015
+  # decision 3) — adoption itself happens via one explicit, reviewed
+  # sync, not automatically the moment this Application is created.
