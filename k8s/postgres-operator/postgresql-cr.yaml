@@ -16,7 +16,7 @@ spec:
     version: "18"
   volume:
     size: 2Gi
-    storageClass: local-path
+    storageClass: longhorn
   users:
     app_user:
       - createdb

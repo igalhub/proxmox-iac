@@ -1796,8 +1796,11 @@ IP + NodePort, simplifying every ingress-routed service at once.
 
 ## PX-022 — Longhorn distributed storage, replacing local-path for Postgres/Redis PVs
 
-**Status:** OPEN — in progress. Longhorn installed and Redis fully
-migrated and verified; Postgres migration not yet started.
+**Status:** DONE — closed out 2026-08-01. Longhorn installed, Redis and
+Postgres both migrated and independently verified, and the Git/ArgoCD
+drift this migration created (the whole cutover happened via raw
+`kubectl`, bypassing Git) fixed and merged in this same PR — acceptance
+criteria only checked off once that fix actually landed, not before.
 
 **Progress so far, real evidence not assumed:**
 
@@ -1865,11 +1868,68 @@ migrated and verified; Postgres migration not yet started.
   replicas split across wk-1 and wk-2 — not assumed from the StorageClass
   parameter alone.
 
-**Not yet done:** Postgres migration (fresh pre-migration backup,
-provision/copy/checksum, cutover, verification), `docs/SPEC.md` update
-covering the full storage architecture (partial — Redis's cutover is
-real but the doc update is deferred to close out with Postgres's, so
-the architecture section is written once, complete, not twice).
+**Postgres migration, real evidence not assumed:**
+
+- **Fresh base backup taken immediately before cutover** (belt-and-
+  suspenders alongside PX-020's standing continuous archiving) —
+  `base_00000006000000000000004C`, confirmed landed in MinIO directly
+  via `mc ls` (not just the trigger command's output), not the earlier
+  verification-pass backup — explicitly re-taken so the actual cutover
+  never relied on WAL-G's fallback-to-latest-available behavior.
+- **Verified via a throwaway clone before ever touching the live
+  cluster:** used the operator's native `spec.clone` mechanism (the
+  same one PX-020 proved out for its restore test) to spin up
+  `px022-pg-lh-verify` — a separate CR, `storageClass: longhorn`,
+  cloning from that exact fresh backup. Its own pod logs confirmed a
+  real restore (`wal-g backup-fetch ... base_00000006000000000000004C`),
+  not a blank bootstrap. Checksum of the live marker row
+  (`04adfd945b63ec988bbc2d4dfc14cc13`) matched exactly, 2 Longhorn
+  replicas confirmed split across wk-1/wk-2. Deleted this verification
+  clone myself afterward — safe, since it was a throwaway resource I
+  created, not the original data.
+- **CR-identity-preserving cutover, not a rename:** Postgres's identity
+  (Service DNS, Patroni leader-election key, credential Secret names)
+  lives entirely at the CR level, unlike Redis's raw-PVC-name collision.
+  The cutover deleted the old `proxmox-iac-pg` CR (which — same
+  category as Redis's old-PVC deletion — also deletes its StatefulSet,
+  its `local-path` PVC under `reclaimPolicy: Delete`, and its credential
+  Secrets) and recreated a CR under the *exact same name*,
+  `storageClass: longhorn`, cloning from the fresh backup — reclaiming
+  the identity so nothing else in the cluster needed to change. Per this
+  repo's hard rule on permanently destructive actions, this was not run
+  by Claude Code — the exact command sequence was written out, reviewed
+  inline in chat, and executed by igalhub himself.
+- **Independently re-verified after, not taken on report alone:** pod
+  `Running`, PVC `Bound` on `storageClassName: longhorn`, the same
+  marker row present, and `SHOW archive_command` confirming WAL-G
+  continuous archiving survived onto the new cluster
+  (`envdir "/run/etc/wal-e.d/env" wal-g wal-push "%p"`, unchanged from
+  before the cutover) — the backup story from PX-020 wasn't lost in the
+  migration.
+
+**Git/ArgoCD drift fixed, same PR:** the entire cutover for both
+services happened via raw `kubectl`, bypassing Git entirely — a real gap
+worth naming, not glossed over. `k8s/postgres-operator/postgresql-cr.yaml`
+updated to `spec.volume.storageClass: longhorn` (matching live state),
+deliberately *without* the `spec.clone` block — that block only ever
+mattered for the one-time bootstrap, and the live CR's copy of it (which
+held a real, plaintext MinIO credential in `s3_secret_access_key`) was
+removed from the live cluster too via a fresh `kubectl apply` of the
+corrected manifest, confirmed via a direct annotation check that the
+credential no longer appears in `last-applied-configuration`. Also
+caught the same kind of drift in `k8s/redis/values.yaml` — its
+`persistence.storageClass` was never set (defaulted to the cluster's
+default class, still `local-path`), which would have silently reverted
+any future PVC recreation back to `local-path` despite the live PVCs
+already running on Longhorn; both `master`/`replica` blocks now declare
+`storageClass: longhorn` explicitly. `git diff` reviewed before
+committing — confirmed no secret material anywhere in either file's
+diff, same discipline as PX-018.
+
+**`docs/SPEC.md` updated** (§5 rewritten with the real storage
+architecture, disk budget, and replication-factor rationale; the top
+status header and §8's build-order item 9 both updated to reflect
+PX-022 as done, not in-progress).
 
 **Background:** Postgres and Redis PVs currently use k3s's default
 `local-path` storage class — each PV's actual data lives on a single
@@ -1908,17 +1968,15 @@ safety net beyond PX-020's standing backup story.
       justified replication factor
 - [x] Redis migrated first (both PVCs), verified via checksum/data
       comparison before its old PV is decommissioned, not just pod health
-- [ ] A fresh Postgres backup taken and confirmed immediately before its
+- [x] A fresh Postgres backup taken and confirmed immediately before its
       migration (belt-and-suspenders alongside PX-020)
-- [ ] Postgres migrated, verified via checksum/data comparison plus a
+- [x] Postgres migrated, verified via checksum/data comparison plus a
       real query against known data, before its old PV is decommissioned
 - [x] Old `local-path` PVs deleted only after both migrations are
       independently confirmed — not left dangling, not deleted
-      prematurely (Redis's old PVs; Postgres's still pending its own
-      migration)
-- [ ] `docs/SPEC.md` updated: storage architecture, replication factor
-      and its rationale, disk budget (deferred to close-out, written once
-      complete rather than twice)
+      prematurely
+- [x] `docs/SPEC.md` updated: storage architecture, replication factor
+      and its rationale, disk budget
 
 ---
 
@@ -1947,4 +2005,4 @@ safety net beyond PX-020's standing backup story.
 | PX-019 | CI Action version pinning audit | DONE |
 | PX-020 | Real Postgres backup story (WAL-E/WAL-G) | DONE |
 | PX-021 | MetalLB for a real LoadBalancer IP instead of NodePort | DONE |
-| PX-022 | Longhorn distributed storage (Postgres/Redis PVs) | OPEN |
+| PX-022 | Longhorn distributed storage (Postgres/Redis PVs) | DONE |

@@ -9,10 +9,11 @@ retrofit). All 10 existing releases are now managed by ArgoCD
 `kubectl apply` — see `docs/TICKETS.md` PX-015 for the full adoption
 trail. A real, tested Postgres backup story (WAL-G to in-cluster MinIO,
 §7) landed via PX-020 — deliberately ahead of PX-022's Longhorn storage
-migration, so a verified backup exists before the storage layer
-underneath that same data gets touched. Ingress now reaches the cluster
-via a real dedicated LoadBalancer IP (MetalLB, `192.168.10.13`, §4/§8)
-rather than a NodePort, per PX-021. Live status: `docs/TICKETS.md`.
+migration, which has since completed: Postgres and Redis both now run
+on Longhorn (§5), migrated only after that backup story existed as a
+safety net. Ingress now reaches the cluster via a real dedicated
+LoadBalancer IP (MetalLB, `192.168.10.13`, §4/§8) rather than a
+NodePort, per PX-021. Live status: `docs/TICKETS.md`.
 
 ---
 
@@ -115,8 +116,37 @@ Jenkins is explicitly called out as the heaviest *single component* (JVM baselin
 
 ## 5. Storage
 
-- Kubernetes StorageClass: k3s's built-in `local-path-provisioner` (host-path-backed PVs) for both Postgres and Redis persistent volumes initially. Simple, no extra install, but ties a pod's data to whichever node it's scheduled on — acceptable for a lab, explicitly documented as the reason this isn't HA at the storage layer.
-- Stretch/future: Longhorn for actual distributed replicated storage across nodes, if time allows — noted in TICKETS.md as a stretch item, not blocking the main build.
+- **Kubernetes StorageClass: Longhorn (PX-022), not `local-path`.**
+  Postgres and Redis both started on k3s's built-in
+  `local-path-provisioner` (host-path-backed PVs, simple, no extra
+  install, but ties a pod's data to whichever node it's scheduled on —
+  the original reason this wasn't HA at the storage layer). Migrated to
+  Longhorn (distributed, replicated block storage) once a real, tested
+  Postgres backup existed as a safety net (PX-020) — deliberately
+  sequenced that way, not migrating the storage layer underneath live
+  data before a proven way to recover it existed.
+- **Disk budget — a real number this project didn't have before
+  PX-022:** `docs/SPEC.md` §3 only ever budgeted RAM/vCPU, never disk.
+  Confirmed live before choosing a replication factor: wk-1 47GB free
+  (19% used), wk-2 50GB free (14% used), both single-disk VMs (no
+  separate dedicated disk — Longhorn uses a directory on the existing
+  root filesystem, chart default `/var/lib/longhorn`). `cp-1` excluded
+  entirely — 34GB free but deliberately workload-free per §1, so only 2
+  real storage-candidate nodes exist.
+- **Replication factor 2, not 3 — a real, justified decision:** a 3rd
+  replica would have nowhere valid to go (cp-1 isn't meant to host
+  workloads). Total data in scope (Postgres 2Gi + Redis 2×1Gi ≈ 4Gi)
+  costs ~8Gi at factor 2, comfortably under 10% of either node's free
+  space — this was never a close call. Longhorn's storage-hosting
+  components (`longhorn-manager`, CSI plugin, instance-managers)
+  restricted to wk-1/wk-2 via a `longhorn-storage=true` node label
+  (applied live via `kubectl label`, not yet codified in Ansible — a
+  known gap, tracked so a fresh node rebuild doesn't silently lose it).
+- Both migrations (Redis, then Postgres) verified via real checksum/data
+  comparison against the live source before cutover, not just "the pod
+  started" — full trail in `docs/TICKETS.md` PX-022, including a real
+  ArgoCD/Helm-hooks issue hit and fixed (Longhorn's `pre-upgrade` hook
+  Job) along the way.
 
 ---
 
@@ -200,7 +230,7 @@ torn down.
 6. ✅ Jenkins (Helm) — done once the rest is stable, since it's the heaviest single component.
 7. ✅ Landing page (in-cluster Prometheus API → live metrics), deployed behind nginx-ingress.
 8. ✅ ArgoCD installed (Helm, `wk-1`, behind nginx-ingress at `argocd.lab.test`), retrofitting everything from step 4 onward under GitOps management. All 10 existing releases adopted (landing page, kube-state-metrics, node-exporter, Prometheus, Grafana, Jenkins, Postgres operator, Sealed Secrets, Redis, nginx-ingress) — none remain as one-off `helm install`s (see `docs/TICKETS.md` PX-015 for the full adoption trail, including the nginx-ingress admission-webhook risk investigation).
-9. ✅ MetalLB (PX-021) — nginx-ingress switched from NodePort to a real dedicated LoadBalancer IP (`192.168.10.13`, layer2 mode). Stretch: Longhorn, Jenkins pipeline coverage expanded (Sealed Secrets is already done, PX-009).
+9. ✅ MetalLB (PX-021) — nginx-ingress switched from NodePort to a real dedicated LoadBalancer IP (`192.168.10.13`, layer2 mode). ✅ Longhorn (PX-022) — Postgres and Redis both migrated from `local-path` to distributed, replicated storage (§5). Stretch: Jenkins pipeline coverage expanded (Sealed Secrets is already done, PX-009).
 
 ## 9. Open questions / not yet decided
 

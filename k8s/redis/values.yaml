@@ -1,5 +1,12 @@
 # Primary + replica, per docs/SPEC.md — a straightforward Helm-deployed
 # cache, deliberately not operator-managed (see SPEC.md's rationale).
+#
+# PX-022: storageClass explicitly `longhorn` on both persistence blocks —
+# previously unset (defaulted to the cluster's default class), which
+# would have silently reverted any future PVC recreation back to
+# `local-path` (still the cluster default) despite the live PVCs having
+# been migrated to Longhorn via a manual PV-retain/rebind, since that
+# migration happened via raw kubectl and never touched this file.
 architecture: replication
 
 auth:
@@ -11,6 +18,7 @@ master:
     kubernetes.io/hostname: wk-1
   persistence:
     size: 1Gi
+    storageClass: longhorn
   resources:
     requests:
       cpu: 50m
@@ -24,6 +32,7 @@ replica:
     kubernetes.io/hostname: wk-1
   persistence:
     size: 1Gi
+    storageClass: longhorn
   resources:
     requests:
       cpu: 50m
