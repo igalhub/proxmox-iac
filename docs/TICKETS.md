@@ -1315,12 +1315,13 @@ against the real private repo.
       via a reviewed ArgoCD sync"), no change needed, verified rather
       than assumed
 
-## PX-016 — Resolve Proxmox memory-gauge inaccuracy (wk-1/wk-2)
+## PX-016 — Resolve Proxmox memory-gauge inaccuracy (wk-1/wk-2/cp-1)
 
-**Status:** DONE — closed out 2026-07-31. Theory confirmed on both nodes:
-Proxmox negotiates the guest-agent memory-stat capability at VM boot
-time, and the live agent install (PX-007) never retroactively activated
-it. A graceful reboot did.
+**Status:** DONE — closed out 2026-07-31 (wk-1/wk-2), extended same-day
+to cp-1 at igalhub's explicit request after the original ticket closed.
+Theory confirmed on all three nodes: Proxmox negotiates the guest-agent
+memory-stat capability at VM boot time, and the live agent install
+(PX-007) never retroactively activated it. A graceful reboot did.
 
 **Verification, wk-1 (VMID 111):** baseline `mem: 8632373248` /
 `maxmem: 8589934592` (just over 100%) before restart. Confirmed idle
@@ -1357,6 +1358,24 @@ Fixed with a normal, non-destructive `kubectl delete pod jenkins-0`
 0 restarts on the new pod. Real functional check after: `HTTP 200` on
 `/login` through the actual nginx-ingress NodePort with a
 `Host: jenkins.lab.test` header, not just "pod looks fine."
+
+**Extension to cp-1 (VMID 110), out of the ticket's original
+wk-1/wk-2-only scope — done at igalhub's explicit request after
+independently confirming cp-1 showed the same pattern:** baseline
+`mem: 3850276864` / `maxmem: 4294967296` (~90%) vs. `kubectl top nodes`'
+real ~28-30%. Higher blast radius than a worker restart — cp-1 is the
+sole control-plane node (no HA, a documented `docs/PRD.md` non-goal), so
+the API server/scheduler/CoreDNS are briefly unavailable during the
+reboot (already-running pods on wk-1/wk-2 keep running throughout, since
+kubelet doesn't need the API server for that) — flagged explicitly
+before proceeding, explicit go-ahead given. `qm reboot 110`, confirmed
+via guest-agent boot time. Post-reboot: API server back up, all 3 nodes
+`Ready`, `mem: 1742213120` (~41%) — accurate, matching real usage
+(`kubectl top nodes`: 20-31% across all three nodes this time). No
+crash-looping pods this run (`metrics-server` restarted and briefly
+`0/1` but settled on its own within ~2 minutes). Real functional check:
+ArgoCD (API-server-dependent) confirmed fully healthy post-reboot, UI
+reachable (`HTTP 200`) through the real ingress path.
 
 **Background:** PX-007's `qemu-guest-agent` correction fixed the missing
 agent (install verified, `qm agent ping` succeeds on all 3 VMs) but did
@@ -1401,6 +1420,8 @@ running straight through:**
 
 **Acceptance criteria:**
 - [x] wk-1 and wk-2 both restarted, memory reading checked immediately after each
+- [x] cp-1 restarted too (extension beyond original scope, igalhub's
+      explicit request), memory reading checked immediately after
 - [x] If inaccurate post-restart: `pvestatd` logs checked for a real error —
       not needed, both nodes were accurate immediately after their reboot
 - [x] If still inconclusive: balloon-device change proposed via Terraform,
@@ -1548,6 +1569,6 @@ attribute the ignore to this repo's `.gitignore`, not `~/.gitignore_global`.
 | PX-013 | Jenkins CI (Helm) with a real pipeline | DONE |
 | PX-014 | Landing page (live Prometheus metrics, real app) | DONE |
 | PX-015 | ArgoCD retrofit | DONE |
-| PX-016 | Resolve Proxmox memory-gauge inaccuracy (wk-1/wk-2) | DONE |
+| PX-016 | Resolve Proxmox memory-gauge inaccuracy (wk-1/wk-2/cp-1) | DONE |
 | PX-017 | Narrow ghcr.io push token scope once repo is public | OPEN |
 | PX-018 | Stop relying on a personal global gitignore for `*.tfvars` | DONE |
