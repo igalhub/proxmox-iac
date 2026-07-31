@@ -1,0 +1,64 @@
+# Adopts the existing nginx-ingress Helm release (installed directly via
+# `helm install` in PX-009) without a reinstall. Tenth and final PX-015
+# adoption — highest blast radius in the whole ticket by design, saved
+# for last: every other service's ingress traffic (including ArgoCD's
+# own UI) routes through this single-replica controller.
+#
+# Real, non-obvious risk identified and planned around before syncing
+# (not discovered after the fact): this chart bundles Helm hook Jobs
+# (pre-install/pre-upgrade/post-install/post-upgrade) that regenerate
+# the admission webhook's self-signed TLS cert and patch the
+# ValidatingWebhookConfiguration's CA bundle — a well-documented gotcha
+# when retrofitting GitOps onto ingress-nginx, since ArgoCD translates
+# Helm hooks to its own sync hooks and genuinely re-runs them. The
+# theoretical failure mode: the already-running controller pod (no
+# second replica) keeps serving whatever cert it already has mounted
+# until it restarts, so if the Jobs *did* rotate the cert, any new
+# Ingress create/update would hit a CA/cert mismatch and get rejected by
+# `failurePolicy: Fail` until a restart.
+#
+# What actually happened, verified rather than assumed either way: the
+# hook Jobs did run (confirmed via `kubectl get events` —
+# ingress-nginx-admission-create/-patch both completed), but the
+# upstream certgen tooling is itself idempotent and left the existing
+# cert untouched — sha256 fingerprint of `ingress-nginx-admission`'s
+# cert identical before and after the sync, and a real throwaway test
+# Ingress was accepted cleanly immediately afterward with no restart.
+# The planned mitigating restart was therefore skipped — its premise
+# (a real mismatch) was directly disproven, not just hoped absent, and
+# forcing a single-replica ingress outage with no corresponding benefit
+# would have been the wrong call. Full verification trail in
+# docs/TICKETS.md PX-015.
+#
+# Multi-source Application, same shape as the other Helm-sourced
+# adoptions: chart from its upstream repo pinned to the exact version
+# already live (4.15.1), values file stays in this repo via the
+# `ref: values` source. Release name `ingress-nginx` matches the live
+# release, so every rendered resource name — including the NodePort
+# Service's fixed port assignments (30963/31395, used by every curl
+# check throughout this whole PX-015 body of work) — is identical to
+# what's already running.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: nginx-ingress
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://kubernetes.github.io/ingress-nginx
+      chart: ingress-nginx
+      targetRevision: 4.15.1
+      helm:
+        releaseName: ingress-nginx
+        valueFiles:
+          - $values/k8s/nginx-ingress/values.yaml
+    - repoURL: git@github.com:igalhub/proxmox-iac.git
+      targetRevision: master
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ingress-nginx
+  # Manual sync, no auto-prune/self-heal (docs/TICKETS.md PX-015
+  # decision 3) — adoption itself happens via one explicit, reviewed
+  # sync, not automatically the moment this Application is created.

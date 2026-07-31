@@ -1108,11 +1108,11 @@ Checked before adopting, not assumed: no application in this repo
 the live database was a leftover string from PX-009's own install
 verification — nothing downstream actually depends on its persisted
 state yet, so despite being "stateful," the real risk here was
-materially lower than Jenkins/Sealed Secrets. This is deliberate, not a
-shortcut: the remaining 1 service (nginx-ingress) is still plain `helm
-install` and its adoption is separate future work. Do not treat this
-ticket as DONE and do not check the "one child `Application` per
-existing release" box until that full adoption actually happens.**
+materially lower than Jenkins/Sealed Secrets. Tenth and final slice,
+same day (branch `feature/PX-015-nginx-ingress-adoption`) —
+nginx-ingress adopted, deliberately saved for last as the
+highest-blast-radius adoption in the ticket. **All 10 services are now
+under ArgoCD. Full adoption complete — this ticket is DONE.**
 
 kube-state-metrics, node-exporter, Prometheus, Grafana, and Jenkins
 adoption all used a multi-source `Application`
@@ -1197,6 +1197,53 @@ pre-existing `px009-check` key still readable after the sync, and the
 master-replica link still `state=online`/`lag=0` — replication itself
 proven unbroken, not just the individual pods' identity.
 
+nginx-ingress adoption (`k8s/argocd/apps/nginx-ingress.yaml`) used the
+same multi-source pattern, chart pinned to `4.15.1`. Highest blast
+radius by design — every other service's ingress traffic, including
+ArgoCD's own UI, routes through this single-replica controller. A real,
+non-obvious risk was identified and planned around *before* syncing,
+not discovered after the fact: this chart bundles Helm hook Jobs
+(`pre-install`/`pre-upgrade`/`post-install`/`post-upgrade`) that
+regenerate the admission webhook's self-signed TLS cert and patch the
+`ValidatingWebhookConfiguration`'s CA bundle — a documented gotcha when
+retrofitting GitOps onto ingress-nginx, since ArgoCD translates and
+re-runs Helm hooks as its own sync hooks. Theoretical failure mode: if
+the Jobs rotated the cert, the already-running controller pod (no
+second replica) would keep serving the old one until restarted, and any
+new Ingress create/update would get rejected by `failurePolicy: Fail`
+in the gap. Planned mitigation, agreed explicitly before syncing: sync,
+then one controlled `kubectl rollout restart` in the same sitting,
+accepting a brief self-inflicted outage over an indefinite silent
+mismatch.
+
+What actually happened, verified rather than assumed either way: the
+diff was previewed first (`managed-resources` — same image/replica
+count as live, no real Deployment change), then synced. The hook Jobs
+genuinely did run (confirmed via `kubectl get events`:
+`ingress-nginx-admission-create`/`-patch` both completed), but the
+upstream certgen tooling proved idempotent and left the existing cert
+untouched — sha256 fingerprint of the `ingress-nginx-admission` Secret's
+cert identical before and after. Confirmed directly, not just inferred
+from the fingerprint match: a real throwaway test Ingress
+(`kubectl create ingress`) was accepted cleanly immediately after the
+sync with zero TLS/CA errors. Also confirmed empirically, not just
+assumed from Kubernetes' documented update semantics: the NodePort
+Service's fixed ports (`30963`/`31395` — used by every curl check
+throughout this entire PX-015 body of work) were unchanged after the
+sync. Since the mismatch that justified the planned restart was
+directly disproven rather than merely absent, the restart was
+deliberately skipped — forcing a single-replica ingress outage with no
+corresponding benefit would have been the wrong call, confirmed via
+explicit check-in rather than silently deciding either way. Controller
+pod UID (`bb909938-...`) confirmed unchanged throughout (0 restarts).
+Final functional check — the one that actually matters for an ingress
+controller, since "the pod is healthy" says nothing about whether
+routing still works: every other adopted service's real ingress path
+checked through the readopted controller post-sync —
+`argocd.lab.test` (`HTTP 200`), `status.lab.test` (`HTTP 200`),
+`jenkins.lab.test/login` (`HTTP 200`), `grafana.lab.test/api/health`
+(`HTTP 200`).
+
 One correction to decision 1's wording: the sealed secret is ArgoCD's
 real repo-credential secret shape (`Opaque`, labeled
 `argocd.argoproj.io/secret-type: repository`, keys `type`/`url`/`sshPrivateKey`),
@@ -1214,23 +1261,25 @@ against the real private repo.
       working against a real sync (not just secret-exists) — GitHub deploy
       key id 158880510, distinct from Jenkins's (158838165); repo
       connection state `Successful` via the ArgoCD API
-- [ ] Root `Application` (app-of-apps) manages one child `Application`
-      per existing release — **partial**: landing-page, kube-state-metrics,
-      node-exporter, Prometheus, Grafana, Jenkins, Postgres Operator,
-      Sealed Secrets, and Redis adopted so far, all without a disruptive
-      reinstall — confirmed via `kubectl get pods`: identical pod UID(s),
-      0 restarts, unchanged age before and after each real sync
-      (Prometheus, Grafana, Jenkins, and Redis additionally confirmed via
-      each PVC's UID/backing volume unchanged, Jenkins further confirmed
-      via intact build history and credentials, Postgres Operator
-      further confirmed via the actual `proxmox-iac-pg` postgresql
-      CR/pod being completely untouched and still accepting connections,
-      Sealed Secrets further confirmed via its keypair Secret's data
-      hashed byte-for-byte identical before/after and a live
-      seal-apply-decrypt round trip still working post-adoption, Redis
-      further confirmed via its pre-existing key still readable and the
-      master-replica link staying `online`/`lag=0` through the sync).
-      The other 1 service remains un-adopted and un-stubbed.
+- [x] Root `Application` (app-of-apps) manages one child `Application`
+      per existing release — **all 10 done**: landing-page,
+      kube-state-metrics, node-exporter, Prometheus, Grafana, Jenkins,
+      Postgres Operator, Sealed Secrets, Redis, and nginx-ingress, every
+      one adopted without a disruptive reinstall — confirmed via
+      `kubectl get pods`: identical pod UID(s), 0 restarts, unchanged
+      age before and after each real sync (Prometheus, Grafana, Jenkins,
+      and Redis additionally confirmed via each PVC's UID/backing volume
+      unchanged, Jenkins further confirmed via intact build history and
+      credentials, Postgres Operator further confirmed via the actual
+      `proxmox-iac-pg` postgresql CR/pod being completely untouched and
+      still accepting connections, Sealed Secrets further confirmed via
+      its keypair Secret's data hashed byte-for-byte identical
+      before/after and a live seal-apply-decrypt round trip still
+      working post-adoption, Redis further confirmed via its
+      pre-existing key still readable and the master-replica link
+      staying `online`/`lag=0` through the sync, nginx-ingress further
+      confirmed via every other adopted service's real ingress path
+      still resolving `HTTP 200` through the readopted controller).
 - [x] Every `Application`, including the root, set to manual sync —
       both `root-app.yaml` and `apps/landing-page.yaml` have `syncPolicy: {}`,
       confirmed no auto-prune/self-heal
@@ -1242,11 +1291,14 @@ against the real private repo.
       committed files target `master`, matching the intended
       steady-state — a follow-up sync against `master` happens right after
       merge)
-- [ ] `docs/SPEC.md` build order and architecture diagram — not yet
-      updated for this partial slice; will land with the full adoption
-      ticket once all 10 services are under ArgoCD, not piecemeal per slice
-- [ ] `docs/PRD.md` ArgoCD success criterion wording — same, deferred to
-      the full-adoption close-out
+- [x] `docs/SPEC.md` build order and architecture diagram updated to
+      reflect ArgoCD as the actual reconciler for all 10 services, not a
+      planned/partial one — build order item 8 marked ✅, provisioning
+      flow diagram and status header updated
+- [x] `docs/PRD.md` ArgoCD success criterion wording confirmed to match
+      the manual-sync decision — already accurate as written ("reconciled
+      via a reviewed ArgoCD sync"), no change needed, verified rather
+      than assumed
 
 ## PX-016 — Resolve Proxmox memory-gauge inaccuracy (wk-1/wk-2)
 
