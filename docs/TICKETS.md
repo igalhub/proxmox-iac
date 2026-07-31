@@ -1620,7 +1620,7 @@ live cluster interaction at all.
 
 ## PX-020 — Real Postgres backup story (WAL-E/WAL-G) via the Zalando operator
 
-**Status:** DONE — closed out 2026-08-01 (PR pending merge). Full
+**Status:** DONE — closed out 2026-08-01 (PR #57, `63ef420`). Full
 architecture, retention, and stated RPO documented in `docs/SPEC.md` §7.
 
 **Verification, real evidence not assumed:**
