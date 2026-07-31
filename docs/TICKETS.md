@@ -1433,6 +1433,52 @@ and worth switching to instead of stopping at step 3 above.
 
 ---
 
+## PX-018 — Stop relying on a personal global gitignore for `*.tfvars`
+
+**Status:** OPEN — not blocking, no urgency, but a real gap: found during
+PX-015's independent close-out verification (not part of PX-015's own
+scope, filed separately per this repo's "no bundling unrelated changes"
+rule).
+
+**Background:** `terraform/terraform.tfvars` is currently untracked, but
+`.gitignore`'s own comment on the `*.tfvars` line says coverage comes
+from `~/.gitignore_global` — a personal, unversioned, machine-local file,
+not anything this repo itself enforces. That's the identical failure
+shape to a bug this project has already hit twice: a personal global
+`*secrets*` rule silently excluded `k8s/sealed-secrets/` from every
+commit since PX-009 (caught in PX-013), and the same global rule caught
+`k8s/argocd/apps/sealed-secrets.yaml` again during PX-015. Both of those
+were "content that should be committed getting silently dropped"; this
+is the inverse — "content that must never be committed (a Proxmox API
+token) has no protection beyond a setting that lives outside the repo
+and isn't guaranteed to exist or be configured the same way on a fresh
+clone, a different machine, or CI." Same root cause, opposite direction,
+worth closing before it's the thing that actually leaks a token instead
+of the thing that actually gets silently skipped.
+
+**Description:** Add an explicit `*.tfvars` rule directly to this
+repo's own `.gitignore` (keeping the existing `!*.tfvars.example`
+negation), matching the pattern already used for `.kubeconfig`/
+`.vault_pass` elsewhere in the same file. Remove or correct the comment
+claiming global-gitignore coverage is sufficient. Confirm the fix is
+real, not just present in the file — `git check-ignore -v` should
+attribute the ignore to this repo's `.gitignore`, not `~/.gitignore_global`.
+
+**Acceptance criteria:**
+- [ ] `.gitignore` has an explicit `*.tfvars` rule, `!*.tfvars.example`
+      negation preserved
+- [ ] `git check-ignore -v terraform/terraform.tfvars` confirms the
+      match comes from this repo's `.gitignore`, not the personal global
+      file
+- [ ] Stale comment claiming global-gitignore coverage removed/corrected
+- [ ] `git log --all -- terraform/terraform.tfvars` confirmed empty —
+      i.e. this ticket is closing a future risk, not papering over a
+      token that's already sitting in git history needing separate
+      remediation
+- [ ] No unrelated changes bundled into this PR
+
+---
+
 ## Stretch (post-MVP, not blocking)
 
 - Longhorn distributed storage, replacing local-path for Postgres/Redis PVs
@@ -1464,3 +1510,4 @@ and worth switching to instead of stopping at step 3 above.
 | PX-015 | ArgoCD retrofit | DONE |
 | PX-016 | Resolve Proxmox memory-gauge inaccuracy (wk-1/wk-2) | OPEN |
 | PX-017 | Narrow ghcr.io push token scope once repo is public | OPEN |
+| PX-018 | Stop relying on a personal global gitignore for `*.tfvars` | OPEN |
