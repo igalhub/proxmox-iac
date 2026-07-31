@@ -1,0 +1,27 @@
+# Adopts the landing page's existing raw manifests (k8s/landing-page/) —
+# deployment, service, ingress, namespace, ghcr pull secret — as-is,
+# without a disruptive reinstall. Chosen as the first (and, for this
+# slice, only) adoption target per docs/TICKETS.md PX-015 decision 4:
+# lowest-risk service first, stateless, already behind its own
+# Deployment, so a bad adoption is caught on something disposable before
+# Postgres/Redis are ever touched.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: landing-page
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: git@github.com:igalhub/proxmox-iac.git
+    targetRevision: master
+    path: k8s/landing-page
+    directory:
+      recurse: false
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: landing-page
+  # Manual sync, no auto-prune/self-heal (docs/TICKETS.md PX-015
+  # decision 3) — adoption itself happens via one explicit, reviewed
+  # sync, not automatically the moment this Application is created.
+  syncPolicy: {}

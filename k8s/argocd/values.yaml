@@ -1,0 +1,28 @@
+# Pinned to wk-1, same role-split pattern as Redis/Postgres/nginx-ingress
+# (docs/SPEC.md) — always-on data/apps services, kept off wk-2 to avoid
+# contending with Jenkins builds. wk-1 has headroom confirmed live via
+# `kubectl top nodes`/`describe node` before this install (PX-015).
+global:
+  nodeSelector:
+    kubernetes.io/hostname: wk-1
+
+# Server run in --insecure mode (TLS terminated nowhere here, home-lab
+# only) so a plain HTTP nginx-ingress backend works without the
+# ssl-passthrough/backend-protocol gymnastics gRPC-over-TLS would need.
+server:
+  extraArgs:
+    - --insecure
+  ingress:
+    enabled: true
+    ingressClassName: nginx
+    hostname: argocd.lab.test
+
+# Dex (SSO) not needed — local admin account only, same trust model as
+# every other service's ingress in this cluster.
+dex:
+  enabled: false
+
+# Applied once, manually, immediately after install — see
+# k8s/argocd/root-app.yaml and k8s/argocd/apps/landing-page.yaml.
+# Both root and child stay on manual sync (no auto-prune/self-heal) per
+# docs/TICKETS.md PX-015 decision 3.

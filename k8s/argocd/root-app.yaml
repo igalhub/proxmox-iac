@@ -1,0 +1,31 @@
+# App-of-apps root. Manages every child Application manifest under
+# k8s/argocd/apps/ — reconciling the whole running cluster becomes one
+# reviewed sync of this Application instead of N separate ones
+# (docs/TICKETS.md PX-015 decision 2).
+#
+# This is the PX-015 landing-page-only slice: only
+# k8s/argocd/apps/landing-page.yaml exists today. The other 9 services
+# (nginx-ingress, Redis, Postgres operator, kube-state-metrics,
+# node-exporter, Prometheus, Grafana, Jenkins, Sealed Secrets) are
+# deliberately NOT stubbed here yet — still plain helm install/kubectl
+# apply, adoption is a separate future ticket slice.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: root-app
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: git@github.com:igalhub/proxmox-iac.git
+    targetRevision: master
+    path: k8s/argocd/apps
+    directory:
+      recurse: false
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  # Manual sync, no auto-prune/self-heal — every reconciliation against
+  # live state requires an explicit, reviewed sync action
+  # (docs/TICKETS.md PX-015 decision 3; CLAUDE.md Reversibility section).
+  syncPolicy: {}
