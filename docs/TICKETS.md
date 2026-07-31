@@ -1076,14 +1076,30 @@ assumed to be clean just because it's the documented pattern.
    Postgres/Redis, so a bad adoption is caught on something disposable.
 
 **Partial slice landed 2026-07-31 (branch
-`feature/PX-015-argocd-landing-page-adoption`) — ArgoCD installed and the
-landing page adopted only. This is deliberate, not a shortcut: the
-remaining 9 services (nginx-ingress, Redis, Postgres operator,
-kube-state-metrics, node-exporter, Prometheus, Grafana, Jenkins, Sealed
-Secrets) are still plain `helm install`/`kubectl apply` and their
-adoption is a separate future session/PR. Do not treat this ticket as
-DONE and do not check the "one child `Application` per existing release"
-box until that full adoption actually happens.**
+`feature/PX-015-argocd-landing-page-adoption`, PR #35; cosmetic fix PR
+#36) — ArgoCD installed and the landing page adopted. Second partial
+slice, same day (branch `feature/PX-015-kube-state-metrics-adoption`) —
+kube-state-metrics adopted too, second-lowest-risk after the landing
+page per decision 4 (pure metrics exporter, no ingress, no dependents).
+This is deliberate, not a shortcut: the remaining 8 services
+(nginx-ingress, Redis, Postgres operator, node-exporter, Prometheus,
+Grafana, Jenkins, Sealed Secrets) are still plain `helm install`/
+`kubectl apply` and their adoption is separate future work. Do not treat
+this ticket as DONE and do not check the "one child `Application` per
+existing release" box until that full adoption actually happens.**
+
+kube-state-metrics adoption used a multi-source `Application`
+(`k8s/argocd/apps/kube-state-metrics.yaml`): the Helm chart pulled
+straight from its upstream repo, pinned to the exact version already
+live (8.0.0), with the values file staying in this repo via the
+standard `ref: values` pattern — rendered manifests matched what was
+already running byte-for-byte (confirmed: same release name produces
+identical resource names), so the sync only changed ownership/tracking
+metadata, never the resources. Verified via real sync: `Synced`/
+`Healthy`, all 5 resources tracked, pod UID/restarts/age unchanged
+before and after (`13dedb1e-...`, 0 restarts), and both Prometheus
+scrape targets for it still `up` post-adoption — the actual functional
+check for a metrics exporter, not just resource-identity comparison.
 
 One correction to decision 1's wording: the sealed secret is ArgoCD's
 real repo-credential secret shape (`Opaque`, labeled
@@ -1103,11 +1119,12 @@ against the real private repo.
       key id 158880510, distinct from Jenkins's (158838165); repo
       connection state `Successful` via the ArgoCD API
 - [ ] Root `Application` (app-of-apps) manages one child `Application`
-      per existing release — **partial**: only the landing-page child
-      exists (`k8s/argocd/apps/landing-page.yaml`). Adopted without a
-      disruptive reinstall — confirmed via `kubectl get pods -n landing-page`:
-      identical pod UID, 0 restarts, unchanged age before and after the
-      real sync. The other 9 services remain un-adopted and un-stubbed.
+      per existing release — **partial**: landing-page
+      (`k8s/argocd/apps/landing-page.yaml`) and kube-state-metrics
+      (`k8s/argocd/apps/kube-state-metrics.yaml`) adopted so far, both
+      without a disruptive reinstall — confirmed via `kubectl get pods`:
+      identical pod UID, 0 restarts, unchanged age before and after each
+      real sync. The other 8 services remain un-adopted and un-stubbed.
 - [x] Every `Application`, including the root, set to manual sync —
       both `root-app.yaml` and `apps/landing-page.yaml` have `syncPolicy: {}`,
       confirmed no auto-prune/self-heal
