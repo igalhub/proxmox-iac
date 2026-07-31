@@ -1540,13 +1540,167 @@ attribute the ignore to this repo's `.gitignore`, not `~/.gitignore_global`.
 
 ---
 
-## Stretch (post-MVP, not blocking)
+## PX-019 — CI Action version pinning audit
 
-- Longhorn distributed storage, replacing local-path for Postgres/Redis PVs
-- MetalLB for a real LoadBalancer IP instead of NodePort
-- Postgres backup story (WAL-E/WAL-G) via the Zalando operator
-- CI action version pinning audit once workflows exist for a full cycle
-  (same class of issue as `project-template`'s PT-008)
+**Status:** OPEN
+
+**Background:** Carried on the Stretch list since early in the project,
+same class of issue as `project-template`'s PT-008. CI has now run for a
+full project cycle (PX-013 already caught and fixed one real Node.js 20
+deprecation reactively — `actions/checkout@v4`→`v7`,
+`hashicorp/setup-terraform@v3`→`v4`) — worth a deliberate audit instead
+of continuing to bump versions only when GitHub forces the issue.
+
+**Description:** Review every `uses:` line in
+`.github/workflows/ci.yml` against its current latest stable major
+version. Separately, decide and document a real trade-off this repo
+hasn't named yet: tag-pinning (current, readable, mutable — a compromised
+action could re-tag) vs. commit-SHA-pinning (immutable, the harder-nosed
+supply-chain-security practice at real companies, less readable without
+a comment). Lowest-risk item of the four requested — pure CI hygiene, no
+live cluster interaction at all.
+
+**Acceptance criteria:**
+- [ ] Every `uses:` line in `ci.yml` reviewed against current latest
+      stable major version
+- [ ] Tag-pinning vs. SHA-pinning decision made and documented as a named
+      trade-off, not a silent default
+- [ ] If SHA-pinning adopted, each pinned SHA has a comment noting which
+      tag/version it corresponds to
+- [ ] CI still green after any version bumps
+
+---
+
+## PX-020 — Real Postgres backup story (WAL-E/WAL-G) via the Zalando operator
+
+**Status:** OPEN
+
+**Background:** `docs/PRD.md`'s non-goals section explicitly punted
+"production-grade backup/DR for the databases" to a future item — today's
+honest answer to "what happens if the Postgres PV is lost" is "data
+loss." Deliberately sequenced before PX-022 (Longhorn): a real, tested
+backup should exist *before* migrating the storage layer underneath the
+same data, not after.
+
+**Description:** The Zalando Postgres Operator has native continuous
+WAL-G archiving to S3-compatible object storage plus periodic base
+backups, configured via the operator's own CRD/ConfigMap fields
+(`WAL_S3_BUCKET` etc.) — the real production pattern, not a bolted-on
+`pg_dump` cron job. Needs an S3-compatible target; MinIO self-hosted
+in-cluster is the natural fit for a home lab (no external dependency, no
+cost, another real Helm-deployed component this project can defend) —
+worth naming explicitly rather than assuming a real AWS bucket is
+appropriate here.
+
+**Decisions to make explicit before/during implementation:** backup
+target (MinIO in-cluster recommended, or an alternative with stated
+rationale); retention/schedule; and — the part that actually matters —
+whether a real restore gets exercised, not just a backup file's
+existence confirmed. An untested backup is not a backup.
+
+**Acceptance criteria:**
+- [ ] Backup target decided and documented
+- [ ] WAL-G continuous archiving configured via the operator, confirmed
+      via a real WAL segment landing in the target
+- [ ] At least one full base backup completes, verified in the target
+      directly, not assumed from operator logs
+- [ ] A real restore exercised end to end into a throwaway/scratch
+      `postgresql` CR (not the live one) — data confirmed to match, not
+      just "restore exited 0"
+- [ ] `docs/SPEC.md` updated with the backup architecture, retention, and
+      stated RPO
+
+---
+
+## PX-021 — MetalLB for a real LoadBalancer IP instead of NodePort
+
+**Status:** OPEN
+
+**Background:** nginx-ingress currently runs as a NodePort Service —
+every service behind it (Grafana, Jenkins, ArgoCD, the landing page) is
+reached via a randomly-assigned high port (`30963`/`31395`) that has to
+be looked up with `kubectl get svc` rather than a predictable address.
+`docs/SPEC.md` §8 already flags MetalLB as the stretch alternative to
+NodePort.
+
+**Description:** Deploy MetalLB in layer2 mode — the only mode that
+makes sense on a single flat home-lab bridge; BGP mode needs router
+support this network doesn't have. Configure an address pool carved out
+of the same structurally-DHCP-excluded range already established for the
+VMs' static IPs (`docs/SPEC.md` §4's pool-narrowing pattern extends
+naturally to one more address). Switch nginx-ingress's Service from
+`NodePort` to `LoadBalancer` so it gets a real, dedicated IP.
+
+**Decisions to make explicit:** which IP to allocate (must be confirmed
+structurally excluded from DHCP the same three independent ways §4 used
+for `.10`-`.12`/`.50`, not just observed-empty); whether hosts-file
+entries then point at that one dedicated IP directly instead of a node
+IP + NodePort, simplifying every ingress-routed service at once.
+
+**Acceptance criteria:**
+- [ ] New static IP allocated for MetalLB's pool, confirmed excluded from
+      DHCP the same rigorous way as the existing VM IPs
+- [ ] MetalLB installed (layer2 mode), address pool configured
+- [ ] nginx-ingress Service switched to `type: LoadBalancer`, confirmed
+      it picks up the allocated IP
+- [ ] Every existing hosts-file-routed service (Grafana/Jenkins/ArgoCD/
+      landing page) re-verified reachable via the new IP with no port
+      number needed
+- [ ] `docs/SPEC.md` §4/§8 updated to reflect MetalLB as the real ingress
+      entry point, NodePort noted as the prior state
+
+---
+
+## PX-022 — Longhorn distributed storage, replacing local-path for Postgres/Redis PVs
+
+**Status:** OPEN
+
+**Background:** Postgres and Redis PVs currently use k3s's default
+`local-path` storage class — each PV's actual data lives on a single
+node's local disk, unreplicated. If wk-1 (hosting both) suffers a disk
+failure, that data is gone regardless of ArgoCD/Git-tracked config being
+intact, since `Application` manifests describe desired state, not the
+bytes on disk. Highest-risk item of the four requested here — touches
+live, real data on both stateful services adopted into ArgoCD under
+PX-015 — deliberately sequenced last, and only after PX-020's real,
+tested Postgres backup exists as a safety net.
+
+**Description:** Install Longhorn via its own Helm chart, which needs
+local disk space earmarked on at least 2-3 nodes for its own replica
+storage (separate from the VMs' existing disks — needs a real disk-space
+check against the actual nodes, `docs/SPEC.md` §3 has never had a *disk*
+budget conversation, only RAM/vCPU). Create a `longhorn` StorageClass
+with a replication factor matched to real available disk headroom.
+Existing PVCs can't be swapped to a new StorageClass in place — this is
+an explicit per-volume migration (provision a new Longhorn-backed PVC,
+copy data across, cut over, verify, only then decommission the old PV),
+not a config change, verified with the same pod-identity/data-integrity
+discipline established across PX-015 (checksums, not just "the pod
+started").
+
+**Decisions to make explicit:** replication factor (2 vs. 3, against
+actual measured disk headroom); migration order — Redis first (already
+established in PX-015 as low real-risk, no dependents) to prove the
+migration mechanics before touching Postgres; whether to take one more
+fresh Postgres backup immediately before its own cutover, as a second
+safety net beyond PX-020's standing backup story.
+
+**Acceptance criteria:**
+- [ ] Disk headroom confirmed on nodes that will host Longhorn replicas
+      (real `df -h`/`lsblk`, not assumed from the RAM budget)
+- [ ] Longhorn installed, StorageClass created with an explicit,
+      justified replication factor
+- [ ] Redis migrated first (both PVCs), verified via checksum/data
+      comparison before its old PV is decommissioned, not just pod health
+- [ ] A fresh Postgres backup taken and confirmed immediately before its
+      migration (belt-and-suspenders alongside PX-020)
+- [ ] Postgres migrated, verified via checksum/data comparison plus a
+      real query against known data, before its old PV is decommissioned
+- [ ] Old `local-path` PVs deleted only after both migrations are
+      independently confirmed — not left dangling, not deleted
+      prematurely
+- [ ] `docs/SPEC.md` updated: storage architecture, replication factor
+      and its rationale, disk budget
 
 ---
 
@@ -1572,3 +1726,7 @@ attribute the ignore to this repo's `.gitignore`, not `~/.gitignore_global`.
 | PX-016 | Resolve Proxmox memory-gauge inaccuracy (wk-1/wk-2/cp-1) | DONE |
 | PX-017 | Narrow ghcr.io push token scope once repo is public | OPEN |
 | PX-018 | Stop relying on a personal global gitignore for `*.tfvars` | DONE |
+| PX-019 | CI Action version pinning audit | OPEN |
+| PX-020 | Real Postgres backup story (WAL-E/WAL-G) | OPEN |
+| PX-021 | MetalLB for a real LoadBalancer IP instead of NodePort | OPEN |
+| PX-022 | Longhorn distributed storage (Postgres/Redis PVs) | OPEN |
