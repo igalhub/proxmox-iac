@@ -1542,8 +1542,10 @@ attribute the ignore to this repo's `.gitignore`, not `~/.gitignore_global`.
 
 ## PX-019 — CI Action version pinning audit
 
-**Status:** OPEN — implementation complete, findings below; CI must be
-confirmed green on the real PR before this closes as DONE.
+**Status:** DONE — closed out 2026-07-31 (PR #56). CI confirmed green on
+the real PR run using the SHA-pinned actions (all 4 jobs:
+`shellcheck`/`terraform`/`ansible-lint`/`ruff`), not assumed from the
+diff looking correct.
 
 **Findings:** Both actions used in `ci.yml` were already current at their
 pinned major — no version bump was needed: `actions/checkout@v7` (latest
@@ -1596,8 +1598,8 @@ live cluster interaction at all.
       trade-off, not a silent default
 - [x] If SHA-pinning adopted, each pinned SHA has a comment noting which
       tag/version it corresponds to
-- [ ] CI still green after any version bumps — pending real PR run,
-      not yet confirmed
+- [x] CI still green after any version bumps — confirmed on the real
+      PR run (#56), all 4 jobs pass
 
 ---
 
@@ -1756,7 +1758,7 @@ safety net beyond PX-020's standing backup story.
 | PX-016 | Resolve Proxmox memory-gauge inaccuracy (wk-1/wk-2/cp-1) | DONE |
 | PX-017 | Narrow ghcr.io push token scope once repo is public | OPEN |
 | PX-018 | Stop relying on a personal global gitignore for `*.tfvars` | DONE |
-| PX-019 | CI Action version pinning audit | OPEN |
+| PX-019 | CI Action version pinning audit | DONE |
 | PX-020 | Real Postgres backup story (WAL-E/WAL-G) | OPEN |
 | PX-021 | MetalLB for a real LoadBalancer IP instead of NodePort | OPEN |
 | PX-022 | Longhorn distributed storage (Postgres/Redis PVs) | OPEN |
