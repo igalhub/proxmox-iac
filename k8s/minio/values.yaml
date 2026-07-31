@@ -4,16 +4,27 @@
 # the live data and its only backup, defeating the entire point of
 # PX-020. wk-2 has ample headroom confirmed live (~50GB disk free,
 # ~6.4GB RAM available) before this was written.
+#
+# Official minio/minio chart (charts.min.io), not Bitnami's — hit and
+# worked around a real platform issue during PX-020: as of mid-2025,
+# Broadcom moved Bitnami's actively-updated container images behind a
+# paid "Bitnami Secure Images" registry; `docker.io/bitnami/*` no longer
+# resolves at all for most charts (confirmed directly: `docker.io/bitnami/minio`
+# 404s on Docker Hub). A frozen `bitnamilegacy/*` mirror exists but is an
+# explicit dead end, not a sustainable base for something this project
+# wants to defend as a real pattern — the official chart pulls from
+# quay.io/minio, unaffected.
 mode: standalone
+replicas: 1
+drivesPerNode: 1
+pools: 1
 
-auth:
-  existingSecret: minio-auth
-  rootUserSecretKey: root-user
-  rootPasswordSecretKey: root-password
+existingSecret: minio-auth
 
-# Single bucket, created at first boot — the only thing this instance
-# exists for is holding PX-020's Postgres WAL-G backups.
-defaultBuckets: "postgres-backups"
+buckets:
+  - name: postgres-backups
+    policy: none
+    purge: false
 
 persistence:
   enabled: true
@@ -34,4 +45,7 @@ nodeSelector:
 # No ingress — MinIO is only reached in-cluster, by the Postgres pod's
 # WAL-G archiving. Not a service anything outside the cluster needs.
 service:
+  type: ClusterIP
+
+consoleService:
   type: ClusterIP
