@@ -2211,9 +2211,16 @@ just immediately post-reboot.
 
 ## PX-024 — Rotate the MinIO backup-admin credential
 
-**Status:** OPEN — not blocking, no urgency; low real risk (MinIO is
-internal-only, never exposed outside the cluster network), but a
-deliberate decision worth making rather than leaving unexamined.
+**Status:** OPEN — implementation complete, awaiting independent
+close-out per this repo's convention (implementer doesn't self-close).
+Decision made: **rotate**, not accept-as-is — `backup-admin` is
+confirmed the literal MinIO *root* credential (`rootUser`, verified live
+via `kubectl get secret minio-auth -o jsonpath='{.data.rootUser}'`), not
+a scoped least-privilege user, so a leak has full blast radius against
+the only backup store this project has. That raised the stakes enough
+to justify rotation despite MinIO being internal-only and the exposure
+vectors themselves being narrow (etcd/audit-log history, a chat
+transcript — neither reachable by mere network access).
 
 **Background:** Found during PX-022's verification, filed separately —
 same "found during verification of ticket X, filed separately as its
@@ -2246,16 +2253,68 @@ sync per PX-020's design — same credential, two namespaces), confirm
 WAL-G archiving/backups still work with the new credential before
 considering the old one retired.
 
+**Pre-rotation verification, not assumed:** confirmed `minio-auth` and
+`postgres-backup-creds` are genuinely the only two consumers of this
+credential — both a repo-wide grep (`grep -rn "backup-admin\|minio-auth\|
+postgres-backup-creds"`, matches only in the two secrets' own files, the
+MinIO chart's `values.yaml` `existingSecret` reference, and docs) and a
+live-cluster check (every pod's spec across all namespaces scanned for a
+reference to either secret name — only the `minio` pod and
+`proxmox-iac-pg-0` matched). Rollback path confirmed technically sound
+before touching anything: MinIO's root credential is mounted purely as a
+Secret volume, read fresh at container start — not baked into on-disk
+state — and bucket data lives on a separate PVC entirely independent of
+which credential is configured, so reverting the SealedSecret to its
+prior committed value and restarting again would have been a clean,
+data-safe fallback had the new credential not come up cleanly (it did;
+rollback wasn't needed).
+
+**Rotation performed (2026-08-01):** new random `rootPassword`/
+`AWS_SECRET_ACCESS_KEY` generated (`rootUser`/`AWS_ACCESS_KEY_ID` kept as
+`backup-admin` — only the secret material needed to change to invalidate
+what was exposed). Both secrets re-sealed via `kubeseal` against the
+live controller's cert (versions confirmed matching, `0.38.4`), applied
+directly via `kubectl apply` (confirmed neither is ArgoCD-managed — the
+`minio` Application only sources the Helm chart/values, not this
+secret). MinIO restarted first (`kubectl rollout restart
+deployment/minio`, rolled out cleanly), Postgres pod restarted
+immediately after (`kubectl delete pod proxmox-iac-pg-0`, StatefulSet
+recreated it fresh, same non-destructive pattern as PX-016's
+`jenkins-0`) — flagged and accepted the real, brief window between the
+two restarts where WAL-G would fail to authenticate with the
+now-invalid old credential (archive_command just retries, no data loss;
+in practice the gap was well under a minute).
+
+**Verified, not assumed:**
+- Postgres pod `1/1 Running`, `0` restarts, `pg_is_in_recovery()` =
+  `false`, marker row (`px020-restore-verification-2026-07-31`) intact
+  and unchanged — data untouched by the rotation.
+- New WAL segments confirmed landing in MinIO under the new credential
+  within ~50s of the pod restart completing (continuous archiving
+  resumed working, not just assumed from the pod being `Running`).
+- A real base backup explicitly triggered via Spilo's own script (the
+  exact cron invocation, `envdir "/run/etc/wal-e.d/env"
+  /scripts/postgres_backup.sh`, not a bare re-run that skips the S3 env)
+  — succeeded, `base_0000000A0000000000000083`, confirmed landing
+  directly via `mc ls`/`mc find` against MinIO (not the script's exit
+  code alone).
+- Every pre-rotation base backup (2026-07-31 through earlier
+  2026-08-01) confirmed still present and listable with the new
+  credential — data survived the rotation intact, old backups not lost
+  or orphaned.
+- New credential authenticated successfully via `mc alias set` +
+  `mc ls` directly against MinIO, independent of the Postgres path.
+
 **Acceptance criteria:**
-- [ ] Explicit decision made and documented: rotate, or accept the risk
+- [x] Explicit decision made and documented: rotate, or accept the risk
       as-is with reasoning — not left silently unresolved
-- [ ] If rotating: both sealed secrets updated with a new credential,
+- [x] If rotating: both sealed secrets updated with a new credential,
       confirmed in sync
-- [ ] If rotating: a real WAL segment and a real base backup both
+- [x] If rotating: a real WAL segment and a real base backup both
       reconfirmed landing in MinIO with the new credential, same rigor
       as PX-020's original verification — not assumed to still work
-- [ ] `docs/TICKETS.md` PX-020 (or this ticket) notes the rotation for
-      the record
+- [x] `docs/TICKETS.md` PX-020 (or this ticket) notes the rotation for
+      the record — recorded here, in this ticket
 
 ---
 
