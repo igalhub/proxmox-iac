@@ -2379,12 +2379,17 @@ in practice the gap was well under a minute).
 
 ## PX-025 — Alertmanager: catch a crash-looping/unhealthy pod automatically
 
-**Status:** OPEN — implementation complete, awaiting independent
-close-out per this repo's convention (implementer doesn't self-close).
-PRs #72 (implementation), #73 (real-deploy fix — `--config.expand-env`
+**Status:** DONE — closed out 2026-08-01/02 (PRs #72, #73, #74, #75).
+Independently re-verified live state fresh before flipping status, not
+trusted from the implementation PRs' own reports: `alertmanager-0`
+`1/1 Running`/`0` restarts, both `alertmanager` and `prometheus`
+ArgoCD Applications `Synced`/`Healthy`, Prometheus's
+`/api/v1/alertmanagers` still showing exactly one active target. PRs
+#72 (implementation), #73 (real-deploy fix — `--config.expand-env`
 doesn't exist), #74 (real-trigger-test fix — `PodNotReady` false
-positive). All three merged, all real-cluster verification done and
-recorded below.
+positive), #75 (evidence trail + `docs/SPEC.md` §11 + PX-023 forward
+note). All merged, all real-cluster verification done and recorded
+below.
 
 **Background:** Prompted by a real, recent gap in this project's own
 history, not a hypothetical: PX-023's `terraform apply` implicitly
@@ -2568,4 +2573,4 @@ from docs:**
 | PX-022 | Longhorn distributed storage (Postgres/Redis PVs) | DONE |
 | PX-023 | Enable VM ballooning; PX-016's memory-gauge fix was incomplete | DONE |
 | PX-024 | Rotate the MinIO backup-admin credential | DONE |
-| PX-025 | Alertmanager: catch a crash-looping/unhealthy pod automatically | OPEN |
+| PX-025 | Alertmanager: catch a crash-looping/unhealthy pod automatically | DONE |
