@@ -2,9 +2,9 @@
 
 This is a living doc: update it in the same commit as any code change that alters architecture. If the code and this doc disagree, that's a bug in the doc.
 
-Status: architecture decided 2026-07-30. Build order steps 1-8 done
+Status: architecture decided 2026-07-30. Build order steps 1-9 done
 (cluster, core services, observability, Jenkins, landing page, ArgoCD
-retrofit). All 10 existing releases are now managed by ArgoCD
+retrofit, Postgres backups, MetalLB, Longhorn). All 10 existing releases are now managed by ArgoCD
 (app-of-apps, manual sync) rather than one-off `helm install`/
 `kubectl apply` — see `docs/TICKETS.md` PX-015 for the full adoption
 trail. A real, tested Postgres backup story (WAL-G to in-cluster MinIO,
@@ -230,7 +230,7 @@ torn down.
 6. ✅ Jenkins (Helm) — done once the rest is stable, since it's the heaviest single component.
 7. ✅ Landing page (in-cluster Prometheus API → live metrics), deployed behind nginx-ingress.
 8. ✅ ArgoCD installed (Helm, `wk-1`, behind nginx-ingress at `argocd.lab.test`), retrofitting everything from step 4 onward under GitOps management. All 10 existing releases adopted (landing page, kube-state-metrics, node-exporter, Prometheus, Grafana, Jenkins, Postgres operator, Sealed Secrets, Redis, nginx-ingress) — none remain as one-off `helm install`s (see `docs/TICKETS.md` PX-015 for the full adoption trail, including the nginx-ingress admission-webhook risk investigation).
-9. ✅ MetalLB (PX-021) — nginx-ingress switched from NodePort to a real dedicated LoadBalancer IP (`192.168.10.13`, layer2 mode). ✅ Longhorn (PX-022) — Postgres and Redis both migrated from `local-path` to distributed, replicated storage (§5). Stretch: Jenkins pipeline coverage expanded (Sealed Secrets is already done, PX-009).
+9. ✅ Postgres backups (PX-020) — real, tested WAL-G backup/restore story to in-cluster MinIO (§7). ✅ MetalLB (PX-021) — nginx-ingress switched from NodePort to a real dedicated LoadBalancer IP (`192.168.10.13`, layer2 mode). ✅ Longhorn (PX-022) — Postgres and Redis both migrated from `local-path` to distributed, replicated storage (§5). Stretch: Jenkins pipeline coverage expanded (Sealed Secrets is already done, PX-009).
 
 ## 9. Open questions / not yet decided
 
