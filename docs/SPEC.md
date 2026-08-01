@@ -13,7 +13,10 @@ migration, which has since completed: Postgres and Redis both now run
 on Longhorn (§5), migrated only after that backup story existed as a
 safety net. Ingress now reaches the cluster via a real dedicated
 LoadBalancer IP (MetalLB, `192.168.10.13`, §4/§8) rather than a
-NodePort, per PX-021. Live status: `docs/TICKETS.md`.
+NodePort, per PX-021. Real-time alerting now exists (Alertmanager +
+Telegram, §11) via PX-025 — a crash-looping or unhealthy pod pushes a
+notification instead of requiring someone to go look. Live status:
+`docs/TICKETS.md`.
 
 ---
 
@@ -250,3 +253,82 @@ torn down.
 **If this project ever needed to scale past single-operator** (a second person applying Terraform, or CI running `terraform apply` directly instead of just `validate`/`plan`), that would be the trigger to revisit this and move to a remote backend with real locking — not before.
 
 **Verified, not assumed:** `.gitignore` already excludes `*.tfstate`/`*.tfstate.*` (confirmed via `git check-ignore -v` against the real state files created during PX-005's apply) and neither file has ever appeared in git history (`git log --all -- terraform/terraform.tfstate` returns nothing).
+
+---
+
+## 11. Alerting & notifications
+
+**Decision (2026-08-01, PX-025): Alertmanager, Telegram-only this
+pass.** Motivated by a real, recurring gap named across two prior
+tickets, not a hypothetical: PX-023's `terraform apply` implicitly
+rebooted wk-1/wk-2 with nobody told, caught only because a human
+happened to check `uptime`; that same reboot crash-looped Jenkins for
+hours, caught only because igalhub hit a 503 directly. Nothing in this
+cluster pushed information anywhere before this — Prometheus/Grafana
+(§2) require someone to go look.
+
+**Deployed as its own Helm release** (`k8s/alertmanager/`,
+`prometheus-community/alertmanager`), not the `prometheus` chart's
+bundled `alertmanager` subchart (stays `enabled: false`) — same
+reasoning as kube-state-metrics/node-exporter being separate releases:
+this project places services by role, which a bundled subchart's
+placement can't express. Pinned to `wk-1`, grouped with the rest of the
+always-on observability stack. Direct-through-ArgoCD install, same
+pattern as MinIO/MetalLB/Longhorn since PX-015. Prometheus wired to it
+via `server.alertmanagers` (the standalone community chart's own
+mechanism — this project doesn't use the Prometheus Operator, so
+alerting rules live in `serverFiles.alerting_rules.yml`, not
+`PrometheusRule` CRDs).
+
+**Rule set — deliberately small, two rules, not a broad initial
+sweep:** `PodCrashLooping`
+(`kube_pod_container_status_waiting_reason{reason="CrashLoopBackOff"}`,
+`for: 2m`) and `PodNotReady`
+(`kube_pod_status_ready{condition="false"}` restricted to pods actually
+in the `Running` phase, `for: 10m`). The `Running`-phase restriction
+isn't precautionary — real-trigger testing caught `PodNotReady` firing
+on a `Completed` one-shot debug pod that would never be `Ready` again
+by design, a genuine false positive fixed before this shipped, not a
+hypothetical avoided in the abstract.
+
+**Notification channel — Telegram, via `telegram_configs`' native
+`bot_token_file`/`chat_id_file` fields**, not the `bot_token`/`chat_id`
+inline fields — the bot token and chat ID never touch git either way,
+but the file-based fields let the actual secret material live purely in
+a mounted `SealedSecret` (`k8s/alertmanager/
+alertmanager-telegram-sealedsecret.yaml`), with no plaintext value or
+even an env-var placeholder in the committed `values.yaml`. (An earlier
+draft tried Alertmanager's own env-var substitution instead — real
+deploy against the live cluster showed that mechanism doesn't exist in
+this Alertmanager version; the file-based fields are the actual
+supported mechanism, confirmed via a throwaway pod before trusting it.)
+Chosen over Slack (not installed, no self-hosted equivalent), email
+(doesn't push to a phone), ntfy/Mattermost (self-hosted, same
+new-app friction as Slack for no better outcome), and WhatsApp (no
+native receiver, and the available routes are disproportionate or
+against ToS) — Telegram uniquely closes the actual gap this exists for:
+a real push notification reaching Igal away from the machine, using an
+app already installed, via a receiver native to Alertmanager itself.
+
+**Discord — documented fallback, not implemented.** Originally scoped
+as a secondary channel (native `discord_configs` receiver, trivial
+webhook setup) but deliberately cut to keep this pass focused on
+proving the mechanism end-to-end on one channel first. Recorded as the
+known, cheap next step if a second channel is ever wanted — but
+desktop-only as currently installed, so it would remain a convenience
+channel, not a replacement for Telegram's away-from-the-machine
+coverage. PagerDuty/Opsgenie-style on-call tooling is out of scope
+entirely — disproportionate machinery for a single-operator lab with no
+rotation, same category as this project's existing Vault/HA
+control-plane non-goals.
+
+**Verified end-to-end, not assumed from rule syntax being valid:** a
+real pod deliberately broken (`k8s/test-app/hello.yaml`,
+`command: ["/bin/false"]`), watched through its actual lifecycle to
+`CrashLoopBackOff`, through Prometheus picking up the metric, through
+the alert going `pending` then `firing` after its real `for` window,
+through Alertmanager receiving and dispatching it
+(`alertmanager_notifications_total{integration="telegram"}`
+incremented, zero failures), to igalhub confirming the real Telegram
+message arrived with matching labels/annotations. Full trail:
+`docs/TICKETS.md` PX-025.
