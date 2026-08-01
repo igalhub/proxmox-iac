@@ -2198,6 +2198,17 @@ already happened. Check `terraform plan`'s output and, if unclear
 whether an attribute is hot-reconfigurable, assume it may force a reboot
 and gate approval accordingly.
 
+**Forward pointer — PX-025:** this ticket's process-deviation finding
+(a real disruption going undetected until a human happened to check
+`uptime`) is the direct motivation for **PX-025** — Alertmanager +
+Telegram alerting, so the next time something like this happens, a real
+notification reaches Igal automatically instead of depending on someone
+noticing. PX-025 also independently caught its own real incident along
+the way: the Jenkins crash-loop this same implicit reboot caused (see
+the correction note further down this ticket) went undetected for hours
+until igalhub hit a 503 directly — exactly the gap PX-025 exists to
+close.
+
 **Acceptance criteria:**
 - [x] `terraform plan` reviewed before apply — confirmed only the
       `balloon` (`memory.floating`) value changed, nothing else
@@ -2368,7 +2379,12 @@ in practice the gap was well under a minute).
 
 ## PX-025 — Alertmanager: catch a crash-looping/unhealthy pod automatically
 
-**Status:** OPEN
+**Status:** OPEN — implementation complete, awaiting independent
+close-out per this repo's convention (implementer doesn't self-close).
+PRs #72 (implementation), #73 (real-deploy fix — `--config.expand-env`
+doesn't exist), #74 (real-trigger-test fix — `PodNotReady` false
+positive). All three merged, all real-cluster verification done and
+recorded below.
 
 **Background:** Prompted by a real, recent gap in this project's own
 history, not a hypothetical: PX-023's `terraform apply` implicitly
@@ -2448,24 +2464,78 @@ project already uses for Vault and HA control-plane.
 Telegram bot must be created via BotFather (or an existing one reused)
 and its token handed over before implementation can proceed past the
 "seal the credential" step — this isn't something Claude Code can set up
-unilaterally, since it requires a real Telegram account action.
+unilaterally, since it requires a real Telegram account action. igalhub
+provided both the bot token and chat ID via a local file outside the
+chat transcript (not pasted directly), read once, sealed, and the
+plaintext file deleted — same discipline PX-024 established after
+finding a credential had leaked into a session transcript.
+
+**Real bugs found and fixed via actual deployment, not assumed correct
+from docs:**
+1. First implementation used Alertmanager's supposed
+   `--config.expand-env` flag to inject the bot token/chat ID via env
+   vars. Real deploy against the live cluster crash-looped immediately:
+   `"unknown long flag '--config.expand-env'"` — that flag never existed
+   for Alertmanager (confirmed via the container's own `--help` output).
+   Fixed (PR #73) by switching to `telegram_configs`' native
+   `bot_token_file`/`chat_id_file` fields, reading from the same
+   SealedSecret mounted as files via `extraSecretMounts` — verified
+   against a throwaway pod (no schema-parse errors) before trusting it,
+   same discipline as everything else in this repo.
+2. The real-trigger test for `PodNotReady` caught a genuine false
+   positive, not a hypothetical: it fired on `jenkins/helm-debug`, a
+   `Completed` one-shot debug pod from 2026-07-30 that will never be
+   `Ready` again *by design* — exactly the alert-fatigue trap this
+   ticket's own description warned against. Fixed (PR #74) by
+   restricting the rule to pods actually in the `Running` phase
+   (`kube_pod_status_phase`). `helm-debug` itself deleted with
+   igalhub's explicit go-ahead — stale debug litter, not part of the
+   tracked Jenkins release.
+
+**Verified, not assumed, for every acceptance criterion:**
+- Alertmanager (`alertmanager-0`) confirmed `1/1 Running`, real startup
+  logs (gossip settled, listening on 9093), ArgoCD `Synced`/`Healthy`.
+- Prometheus's own `/api/v1/alertmanagers` confirmed exactly one
+  `activeAlertmanager` at `http://alertmanager.monitoring.svc.cluster.local:9093/api/v2/alerts`,
+  zero `droppedAlertmanagers`.
+- Both rules confirmed loaded via `/api/v1/rules` with `health: ok`,
+  `lastError: null` — after the false-positive fix, not before.
+- Real triggered test: `k8s/test-app/hello.yaml` redeployed with
+  `command: ["/bin/false"]`, watched through the full real lifecycle —
+  `Error` → `CrashLoopBackOff` (confirmed via the container's own
+  `state.waiting.reason`, not inferred from restart count) →
+  `kube_pod_container_status_waiting_reason` picked up by Prometheus's
+  own scrape → `PodCrashLooping` alert `pending` → `firing` after the
+  real `for: 2m` window elapsed → Alertmanager `/api/v2/alerts` showed
+  it `active` with receiver `telegram` →
+  `alertmanager_notifications_total{integration="telegram"}` incremented
+  with zero entries in `alertmanager_notifications_failed_total` across
+  every failure reason → **igalhub confirmed the actual Telegram message
+  arrived**, pasted verbatim, matching the alert's real labels/
+  annotations exactly. Same real end-to-end confirmation also happened
+  organically for `PodNotReady` (the `helm-debug` false positive,
+  above) — a second, unplanned but genuine proof the whole pipeline
+  works, not just the one deliberately staged test.
+- Test pod (`hello`) and the stale `helm-debug` pod both deleted after
+  verification; cluster confirmed quiet afterward — `/api/v1/alerts`
+  empty, all 16 ArgoCD Applications `Synced`/`Healthy`.
 
 **Acceptance criteria:**
-- [ ] Alertmanager installed via ArgoCD Application on `wk-1`, wired as
+- [x] Alertmanager installed via ArgoCD Application on `wk-1`, wired as
       a Prometheus target, confirmed via Prometheus's own
       `/api/v1/alertmanagers`
-- [ ] Telegram bot token (from igalhub, via BotFather) sealed the same
+- [x] Telegram bot token (from igalhub, via BotFather) sealed the same
       way every other credential in this repo is (SealedSecret, never
       plaintext committed)
-- [ ] `CrashLoopBackOff` and `PodNotReady`-for-N-minutes rules
+- [x] `CrashLoopBackOff` and `PodNotReady`-for-N-minutes rules
       configured, confirmed via a real triggered test against the
       redeployed `k8s/test-app/hello.yaml` (not just "the rule syntax is
-      valid") — deliberately broken, confirm the Telegram message
-      actually arrives, then deleted again
-- [ ] `docs/SPEC.md` updated with the alerting architecture, the
+      valid") — deliberately broken, confirmed the Telegram message
+      actually arrived, then deleted again
+- [x] `docs/SPEC.md` updated with the alerting architecture, the
       Telegram-only channel decision/rationale above, and Discord's
       documented-fallback status
-- [ ] `docs/TICKETS.md` PX-023 gets a forward-pointing note that this
+- [x] `docs/TICKETS.md` PX-023 gets a forward-pointing note that this
       ticket is the direct response to its process-deviation finding
 
 ---
