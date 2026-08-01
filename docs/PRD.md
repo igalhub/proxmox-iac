@@ -25,7 +25,7 @@ The bar for "done" isn't "it runs." It's "I can defend every decision in this re
 - High availability at the Kubernetes control-plane level (single control-plane node is accepted; documented as a known limitation, not solved here).
 - Full secrets-management platform (Vault) — that's already a separate portfolio project (`vault-secrets-demo`) and conflating the two would blur both stories. This repo will note where a real org would plug in Vault, and use a lighter mechanism (Sealed Secrets or SOPS) for anything that must be Git-committed.
 - Multi-node Proxmox / cross-host scheduling — one Proxmox host, three VMs on it.
-- Production-grade backup/DR for the databases — noted as a stretch/future item, not blocking.
+- Production-grade backup/DR for the databases — **narrowed by PX-020**: a real, tested Postgres backup/restore story now exists (WAL-G continuous archiving + daily base backups to in-cluster MinIO, verified via a checksum-matched restore). What's still out of scope is DR in the "another site/another cluster" sense — the backup target lives in the same cluster as the data it protects, so a whole-cluster/whole-host loss still takes out both together.
 
 ## Success criteria
 

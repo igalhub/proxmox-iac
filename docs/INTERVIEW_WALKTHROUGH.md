@@ -396,6 +396,68 @@ moving the disk it lives on, not after.
 
 ---
 
+## Step 13 — VM ballooning, and a three-ticket root-cause story (PX-023, done)
+
+**What it is:** the Proxmox UI's memory gauge for all three VMs had been
+maxed out near 100% since early in the project — cosmetic, never a real
+resource problem (`kubectl top nodes` always showed real usage was low),
+but worth telling in full because the actual fix took three separate
+tickets to reach, each one correcting the last. That arc is a better
+answer to "tell me about a bug you had to dig into" than any single
+ticket in isolation.
+
+**PX-007 (misdiagnosis #1):** `qemu-guest-agent` was declared in
+Terraform (`agent.enabled = true`) but never actually installed by the
+Ansible role. Without it, Proxmox had no guest memory data at all and
+fell back to a host-side view counting Linux's own disk cache as
+"used." Fixed by installing the agent — but the gauge was *still* wrong
+afterward, which is where it gets interesting.
+
+**PX-016 (misdiagnosis #2 — looked fixed by accident):** the guest
+agent's memory-stat capability only negotiates with Proxmox at VM *boot*
+time, not from a live install. A reboot made the gauge accurate — but
+that "fix" was actually just resetting the guest's page cache to empty,
+which happened to make a still-miscalibrated gauge read correctly for a
+few hours. The ticket closed `DONE` on that window without waiting long
+enough to see it drift back. It did, weeks later, caught during PX-022.
+
+**PX-023 (the real fix):** ballooning itself was never enabled
+(`balloon`/`memory.floating` unset, defaulting to disabled). Without a
+real balloon floor, Proxmox has no genuine memory-pressure telemetry
+from the guest and falls back to something close to `total - free` —
+which trends toward 100% on *any* healthy long-running Linux guest,
+since Linux deliberately keeps `free` near zero for reclaimable disk
+cache (by design, not a leak). Set a real non-zero `memory.floating` per
+VM via Terraform — tighter on cp-1 (87.5% floor) than wk-1/wk-2 (75%)
+given cp-1 is the sole control-plane node with no HA and runs etcd.
+Verified stable across a real multi-hour post-reboot window (not just
+immediately after rebooting) — the specific verification gap that made
+PX-016's close premature.
+
+**The honest part, if asked "what went wrong along the way":** applying
+the Terraform change itself triggered an *implicit reboot* of wk-1/wk-2
+via the provider — not a hot config write, discovered only by checking
+`uptime` after the fact and noticing the apply for those two VMs took
+6x longer than cp-1's. That reboot happened without the discrete
+per-VM go-ahead the plan called for. Documented as a real process
+deviation rather than folded quietly into "it worked out" — including a
+full stateful-service health check afterward (Longhorn replicas,
+Postgres/Redis restart counts, a marker-row/known-key data-integrity
+check) to independently confirm nothing was lost, and a named lesson for
+future tickets: changes to hardware-affecting VM attributes can trigger
+an implicit reboot at `apply` time, so approval needs to happen *before*
+apply, not before a separately-scheduled reboot command.
+
+**Why this is worth telling over a cleaner-sounding bug:** it's honest
+about getting something wrong twice before finding the real cause, and
+about a process slip mid-fix — and shows the discipline of catching both
+via direct verification (`uptime`, real API-based memory readings, real
+data-integrity checks) rather than trusting an early good-looking
+result, which is exactly the mistake that caused PX-016 to close
+prematurely in the first place.
+
+---
+
 ## Non-goals — know these cold, they preempt a certain kind of question
 
 - **No HA control-plane** — single control-plane node is an accepted,
@@ -432,5 +494,7 @@ without disrupting the running workload. **Step 12 (PX-020/021/022) is
 done**: Postgres has a real, tested WAL-G backup/restore story; ingress
 reaches the cluster via a real dedicated LoadBalancer IP (MetalLB) instead
 of a NodePort; Postgres and Redis both run on Longhorn (distributed,
-replicated storage) instead of `local-path`. Live status:
-`docs/TICKETS.md`.
+replicated storage) instead of `local-path`. **Step 13 (PX-023) is
+done**: the Proxmox memory-gauge issue is fully resolved (ballooning
+enabled via Terraform), closing out a three-ticket root-cause chain
+that started back at PX-007. Live status: `docs/TICKETS.md`.
