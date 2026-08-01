@@ -2366,6 +2366,80 @@ in practice the gap was well under a minute).
 
 ---
 
+## PX-025 — Alertmanager: catch a crash-looping/unhealthy pod automatically
+
+**Status:** OPEN
+
+**Background:** Prompted by a real, recent gap in this project's own
+history, not a hypothetical: PX-023's `terraform apply` implicitly
+rebooted wk-1/wk-2 without anyone being told, and was only caught
+because a human happened to check `uptime` after the fact. More broadly,
+nothing in this cluster currently pushes information toward Igal —
+Prometheus/Grafana (PX-010) require someone to go look. "A pod is
+crash-looping and nobody notices for hours" is the general form of that
+same problem.
+
+**Description:** Deploy Alertmanager via its own Helm chart (the
+standard Prometheus-ecosystem companion, already half-built here since
+Prometheus + kube-state-metrics + node-exporter exist from PX-010) on
+`wk-1`, matching the existing observability role split. Wire it to
+Prometheus as an Alertmanager target. Start with a small, deliberately
+curated rule set — `CrashLoopBackOff` and `PodNotReady`-for-N-minutes —
+rather than trying to cover everything at once, to avoid the alert-
+fatigue trap of an overly broad initial rule set.
+
+**Notification channel — decided:** Telegram as the primary channel via
+Alertmanager's native `telegram_configs` receiver (built into
+Alertmanager itself, not a generic webhook bolt-on). Chosen over the
+alternatives considered: Slack (rejected — not installed, and literal
+self-hosted Slack doesn't exist); email (rejected as primary — real, but
+doesn't push to a phone the way this problem actually needs); ntfy/
+Mattermost self-hosted (rejected as primary — solves the "no external
+SaaS" goal but still requires installing a new app, same friction as
+Slack, for no better outcome than what's already installed); WhatsApp
+(ruled out entirely — no native Alertmanager receiver, and the only
+routes to it either require Meta Business verification, disproportionate
+for personal alerting, or violate WhatsApp's terms of service). Telegram
+wins specifically because it closes the actual gap this ticket exists
+for — a real push notification reaching Igal *away from the machine*,
+not just information becoming available somewhere he'd have to go
+looking — using an app he already has installed, via a native
+Alertmanager receiver, with no self-hosted component to run and
+maintain.
+
+Discord wired as a secondary channel — native Alertmanager receiver
+(`discord_configs`), trivial webhook setup, effectively free to add
+once the Alertmanager config exists either way. Explicitly not the
+primary: Discord is desktop-only as currently installed (Ubuntu
+machine), so it doesn't close the "away from the machine" gap Telegram
+does — it's a convenience channel for when Igal is already at that
+machine, not the real fix.
+
+PagerDuty/Opsgenie-style dedicated on-call tooling deliberately out of
+scope — the real answer for true paging with on-call rotation at a
+company, but disproportionate machinery for a single-operator home lab
+with no rotation to speak of. Same category of named non-goal as this
+project already uses for Vault and HA control-plane.
+
+**Acceptance criteria:**
+- [ ] Alertmanager installed via Helm on `wk-1`, wired as a Prometheus
+      target, confirmed via Prometheus's own `/api/v1/alertmanagers`
+- [ ] Telegram bot created via BotFather, token sealed the same way
+      every other credential in this repo is (SealedSecret, never
+      plaintext committed)
+- [ ] `CrashLoopBackOff` and `PodNotReady`-for-N-minutes rules
+      configured, confirmed via a real triggered test (not just "the
+      rule syntax is valid") — deliberately break something disposable,
+      confirm the Telegram message actually arrives
+- [ ] Discord webhook wired as a secondary receiver, same real-trigger
+      verification
+- [ ] `docs/SPEC.md` updated with the alerting architecture and the
+      channel decision/rationale above
+- [ ] `docs/TICKETS.md` PX-023 gets a forward-pointing note that this
+      ticket is the direct response to its process-deviation finding
+
+---
+
 ## Ticket status
 
 | Ticket | Title | Status |
@@ -2394,3 +2468,4 @@ in practice the gap was well under a minute).
 | PX-022 | Longhorn distributed storage (Postgres/Redis PVs) | DONE |
 | PX-023 | Enable VM ballooning; PX-016's memory-gauge fix was incomplete | DONE |
 | PX-024 | Rotate the MinIO backup-admin credential | DONE |
+| PX-025 | Alertmanager: catch a crash-looping/unhealthy pod automatically | OPEN |
