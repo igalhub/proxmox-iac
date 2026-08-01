@@ -46,6 +46,14 @@ server:
 # Both metrics confirmed live via kube-state-metrics before writing
 # these (kube_pod_container_status_waiting_reason,
 # kube_pod_status_ready), not assumed to exist.
+#
+# PodNotReady's real-trigger test caught a real bug in the first draft
+# of this rule, not a hypothetical: it fired on `helm-debug` (jenkins
+# namespace), a Completed one-shot debug pod from 2026-07-30 that will
+# never be Ready again *by design* — a false positive, exactly the
+# alert-fatigue trap this ticket set out to avoid. Fixed by restricting
+# to pods actually in the Running phase (kube_pod_status_phase), so a
+# correctly-terminal pod can't trip it.
 serverFiles:
   alerting_rules.yml:
     groups:
@@ -60,7 +68,7 @@ serverFiles:
               summary: "{{ $labels.namespace }}/{{ $labels.pod }} is crash-looping"
               description: "Container {{ $labels.container }} in pod {{ $labels.namespace }}/{{ $labels.pod }} is in CrashLoopBackOff — the same undetected-for-hours failure mode PX-023's Jenkins incident surfaced."
           - alert: PodNotReady
-            expr: kube_pod_status_ready{condition="false"} == 1
+            expr: kube_pod_status_ready{condition="false"} == 1 and on(namespace, pod) kube_pod_status_phase{phase="Running"} == 1
             for: 10m
             labels:
               severity: warning
