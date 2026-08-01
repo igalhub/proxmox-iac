@@ -2058,6 +2058,50 @@ three-ticket root-cause chain together. CI green (ansible-lint/ruff/
 shellcheck/terraform), merged via `gh pr merge --squash --delete-branch`,
 branch cleaned up locally + on origin.
 
+**Correction (2026-08-01, found by igalhub reporting Jenkins 503s hours
+after close-out) — the stateful-service health check had a real gap:**
+`jenkins-0` was crash-looping on its init container the entire time
+since this ticket's implicit wk-2 reboot, undetected until igalhub hit
+`http://jenkins.lab.test:30963/job/proxmox-iac-ci/` directly and saw a
+503. Root cause, confirmed via the init container's own logs, not
+guessed: the exact same bug PX-016 already documented — the plugin-copy
+`cp` (no `-f`) in the init container choking on pre-existing files in
+the `emptyDir` that survived the *graceful* reboot, interactive
+overwrite prompts hitting instant EOF, exit 1, crash loop. Event
+timeline confirmed the trigger directly: first failure timestamped at
+wk-2's implicit reboot during this ticket's `terraform apply`
+(`~19:13` IDT), not something unrelated.
+
+**Why this slipped through this ticket's own verification, stated
+plainly:** the post-reboot stateful-service health check performed
+above was explicitly scoped to Longhorn/Postgres/Redis — the services
+PX-022 introduced — and never extended to Jenkins on the same node,
+even though PX-016 had already put this exact failure mode on record as
+a known risk of *any* wk-2 reboot, planned or implicit. The check that
+would have caught it was already written down in a prior ticket and
+simply wasn't run against this reboot. No data was at risk (Jenkins's
+build history lives on its own PVC, confirmed intact — all 45 prior
+builds present, `nextBuildNumber` consistent), but the gap in
+verification coverage is the real finding here, not the crash itself.
+
+**Fixed, verified, not just "pod looks fine":** `kubectl delete pod
+jenkins-0` (StatefulSet recreated it fresh, clean `emptyDir` — same
+non-destructive fix as PX-016). Confirmed `2/2 Running`, `0` restarts;
+`/login` returns `HTTP 200` through both the real LoadBalancer IP
+(`192.168.10.13`) and the NodePort igalhub originally hit; all 45 prior
+builds confirmed present on disk (`nextBuildNumber: 46`, directories `1`
+through `45` all present — an initial `ls`-sort misread briefly looked
+like data loss and was corrected immediately, not left uncorrected).
+
+**Lesson for future tickets that reboot (or cause an implicit reboot
+of) wk-2:** the Jenkins init-container crash-loop is a known, recurring
+risk of *any* wk-2 reboot, not a one-off — it should be a standard check
+alongside whatever service actually motivated the reboot, the same way
+this ticket already learned to check Longhorn/Postgres/Redis after
+touching wk-1. A reboot's blast-radius check needs to cover every
+stateful/quasi-stateful thing on the node that reboots, not just the
+one this particular ticket happens to be about.
+
 **Background:** During PX-022, igalhub reported the Proxmox memory gauge
 maxed out again on wk-1/wk-2 — the same symptom PX-016 closed out as
 DONE. Investigation found PX-016's conclusion was wrong, or at least
