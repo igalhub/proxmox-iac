@@ -1,7 +1,12 @@
 # Standalone Prometheus, deliberately lighter than kube-prometheus-stack
-# (no Alertmanager, no pushgateway) — this lab has no on-call to page,
-# per docs/SPEC.md's sizing rationale against the confirmed-real
-# remaining RAM headroom.
+# (no pushgateway) per docs/SPEC.md's sizing rationale against the
+# confirmed-real remaining RAM headroom.
+#
+# Alertmanager (PX-025) is deployed as its own separate Helm release
+# (k8s/alertmanager/), not this chart's bundled subchart — same reason
+# kube-state-metrics/node-exporter are separate releases below: this
+# project places services by role (docs/SPEC.md §1), which a bundled
+# subchart's placement can't express. Wired via server.alertmanagers.
 alertmanager:
   enabled: false
 
@@ -30,3 +35,35 @@ server:
       memory: 256Mi
     limits:
       memory: 512Mi
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - alertmanager.monitoring.svc.cluster.local:9093
+
+# PX-025: a small, deliberately curated rule set — CrashLoopBackOff and
+# PodNotReady-for-10m — rather than trying to cover everything at once,
+# to avoid the alert-fatigue trap of an overly broad initial rule set.
+# Both metrics confirmed live via kube-state-metrics before writing
+# these (kube_pod_container_status_waiting_reason,
+# kube_pod_status_ready), not assumed to exist.
+serverFiles:
+  alerting_rules.yml:
+    groups:
+      - name: pod-health
+        rules:
+          - alert: PodCrashLooping
+            expr: kube_pod_container_status_waiting_reason{reason="CrashLoopBackOff"} == 1
+            for: 2m
+            labels:
+              severity: warning
+            annotations:
+              summary: "{{ $labels.namespace }}/{{ $labels.pod }} is crash-looping"
+              description: "Container {{ $labels.container }} in pod {{ $labels.namespace }}/{{ $labels.pod }} is in CrashLoopBackOff — the same undetected-for-hours failure mode PX-023's Jenkins incident surfaced."
+          - alert: PodNotReady
+            expr: kube_pod_status_ready{condition="false"} == 1
+            for: 10m
+            labels:
+              severity: warning
+            annotations:
+              summary: "{{ $labels.namespace }}/{{ $labels.pod }} has not been Ready for 10m"
+              description: "Pod {{ $labels.namespace }}/{{ $labels.pod }} has been reporting NotReady for over 10 minutes."

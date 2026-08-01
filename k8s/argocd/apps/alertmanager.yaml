@@ -1,0 +1,36 @@
+# PX-025's alerting story. Another brand-new service installed directly
+# through ArgoCD, same pattern as MinIO/MetalLB/Longhorn since PX-015
+# made this repo fully GitOps — not an adoption of a pre-existing
+# `helm install`.
+#
+# Own release ("alertmanager"), not the prometheus chart's bundled
+# subchart (disabled in k8s/prometheus/values.yaml) — same reasoning as
+# kube-state-metrics/node-exporter being separate releases rather than
+# prometheus's bundled ones: this project places services by role
+# (docs/SPEC.md §1), which the bundled subchart placement can't express.
+#
+# Pinned to wk-1 (k8s/alertmanager/values.yaml), grouped with the rest
+# of the always-on observability stack.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: alertmanager
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://prometheus-community.github.io/helm-charts
+      chart: alertmanager
+      targetRevision: 1.41.0
+      helm:
+        releaseName: alertmanager
+        valueFiles:
+          - $values/k8s/alertmanager/values.yaml
+    - repoURL: git@github.com:igalhub/proxmox-iac.git
+      targetRevision: master
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  # Manual sync, no auto-prune/self-heal — same discipline as every
+  # other Application in this repo (docs/TICKETS.md PX-015 decision 3).

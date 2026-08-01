@@ -1,0 +1,55 @@
+# PX-025 — Telegram is the sole receiver this pass (Discord deliberately
+# deferred, see docs/TICKETS.md). Deployed as its own Helm release, same
+# as kube-state-metrics/node-exporter — the `prometheus` chart's bundled
+# `alertmanager` subchart stays disabled (k8s/prometheus/values.yaml)
+# to avoid a duplicate install, same reasoning as those two.
+nodeSelector:
+  kubernetes.io/hostname: wk-1
+
+persistence:
+  enabled: false
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    memory: 128Mi
+
+# Bot token/chat ID never touch this file or git: Alertmanager's native
+# env-var expansion (--config.expand-env, below) substitutes the
+# ${TELEGRAM_*} placeholders in config.route/receivers at container
+# start, sourced from the alertmanager-telegram SealedSecret — same
+# secretKeyRef pattern used everywhere else in this repo (e.g. WAL-G's
+# AWS_* env vars), not a new mechanism invented for this ticket.
+extraArgs:
+  config.expand-env: "true"
+
+extraEnv:
+  - name: TELEGRAM_BOT_TOKEN
+    valueFrom:
+      secretKeyRef:
+        name: alertmanager-telegram
+        key: botToken
+  - name: TELEGRAM_CHAT_ID
+    valueFrom:
+      secretKeyRef:
+        name: alertmanager-telegram
+        key: chatId
+
+config:
+  enabled: true
+  global: {}
+  route:
+    receiver: telegram
+    group_by: ["alertname"]
+    group_wait: 30s
+    group_interval: 5m
+    repeat_interval: 3h
+  receivers:
+    - name: telegram
+      telegram_configs:
+        - bot_token: "${TELEGRAM_BOT_TOKEN}"
+          chat_id: ${TELEGRAM_CHAT_ID}
+          parse_mode: "HTML"
+          send_resolved: true
