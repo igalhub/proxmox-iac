@@ -267,3 +267,25 @@ Postgres and Redis both migrated from `local-path` to this Longhorn
 the live source before cutover. Full disk-budget numbers, replication-
 factor rationale, and migration trail: `docs/SPEC.md` §5;
 `docs/TICKETS.md` PX-022.
+
+## What's installed (PX-025)
+
+| Component | Namespace | Install |
+|---|---|---|
+| Alertmanager | `monitoring` | ArgoCD Application (`k8s/argocd/apps/alertmanager.yaml`), official `prometheus-community/alertmanager` chart — own release, not the `prometheus` chart's bundled subchart (stays disabled, same reasoning as kube-state-metrics/node-exporter) |
+
+Another brand-new direct-through-ArgoCD install, same pattern as MinIO/
+MetalLB/Longhorn. Pinned to `wk-1`, grouped with the rest of the
+always-on observability stack. Prometheus wired to it via
+`server.alertmanagers` (`k8s/prometheus/values.yaml`); two curated
+alerting rules (`PodCrashLooping`, `PodNotReady`) live in the same
+file's `serverFiles.alerting_rules.yml` — this project uses the
+standalone `prometheus` chart, not the Prometheus Operator, so rules
+aren't `PrometheusRule` CRDs. Telegram bot token/chat ID sealed
+(`k8s/alertmanager/alertmanager-telegram-sealedsecret.yaml`), read by
+`telegram_configs`' native `bot_token_file`/`chat_id_file` fields —
+never a plaintext value or env-var placeholder in git. Two real bugs
+found via actual deployment and fixed (a nonexistent Alertmanager flag,
+a false-positive rule caught by the real-trigger test): full trail,
+including igalhub's confirmed real Telegram delivery, in
+`docs/SPEC.md` §11 and `docs/TICKETS.md` PX-025.
