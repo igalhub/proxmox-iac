@@ -380,6 +380,30 @@ of the display question — it's also what enables clean guest shutdown,
 `qm exec`, and consistent snapshots, none of which worked before this
 fix either.
 
+**Addendum (2026-08-01) — the parked display question's full resolution,
+for anyone reading this ticket in isolation:** the "park it, don't chase
+it further" decision above was reopened twice more. **PX-016** tested
+the leading theory named here directly (boot-time memory-stat
+negotiation) — a graceful reboot did make the gauge accurate, appearing
+to confirm it and closing the ticket `DONE`. That conclusion turned out
+to be **incomplete**: the reboot's real effect was just resetting the
+guest's page cache to empty, which happened to make the gauge look
+correct for a few hours — not because the negotiation theory was fully
+right, but because the actual root cause (ballooning disabled,
+`balloon: 0`, noted here as "a second variable regardless of the guest
+agent") was still present the whole time. As the page cache refilled
+(normal, healthy Linux behavior — the same `buff/cache` growth this
+ticket already identified as the real driver of the ~100% reading), the
+gauge drifted back to ~100% again, caught during PX-022. **PX-023**
+fixed the actual mechanism: enabled `memory.floating` (Proxmox's real
+balloon-floor value) via Terraform, giving Proxmox genuine
+memory-pressure telemetry from the guest instead of the `total - free`
+fallback this ticket first identified as the culprit. Verified stable
+over a multi-hour post-reboot window, not just immediately after
+rebooting — the specific gap that made PX-016's conclusion premature.
+Three tickets, one underlying story: PX-007 fixed "no data," PX-016
+fixed "looks right by accident," PX-023 fixed the actual measurement.
+
 ---
 
 ## PX-008 — k3s cluster bring-up
@@ -2053,20 +2077,122 @@ the page cache fills back up — not just accurate immediately
 post-reboot, which is exactly the false signal that closed PX-016
 prematurely.
 
+**Implementation decision — per-VM floor values:** `memory.floating` set
+to 75% of dedicated for wk-1/wk-2 (6144 of 8192, 2048 MB reclaimable)
+and a tighter 87.5% for cp-1 (3584 of 4096, 512 MB reclaimable). cp-1's
+tighter floor rests on three independent points, verified against
+current cluster state, not assumed: it's the sole control-plane with no
+HA; it runs etcd, whose loss under reclaim pressure is categorically
+worse and less recoverable than a worker losing a scheduled pod; and it
+has half the absolute memory of a worker to begin with, so the same
+percentage floor would already leave it less reclaimable headroom before
+any of the above. (An earlier draft of this justification also cited
+cp-1 running ArgoCD and Longhorn's control-plane components — checked
+against `docs/SPEC.md` and PX-022 and found false: ArgoCD is on wk-1,
+Longhorn is explicitly restricted to wk-1/wk-2, and cp-1's
+`node-role.kubernetes.io/control-plane:NoSchedule` taint, re-verified
+live in PX-016, keeps both off it. That claim is dropped; the three
+points above stand on their own and don't depend on it.)
+
+**Process deviation — wk-1/wk-2 rebooted without a discrete go-ahead:**
+`terraform apply` (`0 added, 3 changed, 0 destroyed`, matching the
+reviewed plan exactly) did not just update `qm config` — the bpg/proxmox
+provider triggered an *implicit in-place reboot* of wk-1 and wk-2 as
+part of applying `memory.floating`, evidenced by apply duration alone:
+cp-1's `memory` block update completed in 17s, wk-1/wk-2's each took
+1m45s — consistent with a full guest reboot, not a hot-applied config
+write. Confirmed directly via `uptime -s` on each VM post-apply: wk-1
+and wk-2 both showed a fresh boot at `2026-08-01 16:13:04`, inside the
+apply's own execution window, well before cp-1's separate, deliberate,
+explicitly-authorized `sudo reboot` at `16:14:24`. This was caught only
+by checking `uptime` after the fact, not predicted beforehand.
+
+At the time, the go-ahead given was for `terraform apply` — the config
+change — not framed as also authorizing a reboot of wk-1/wk-2. The
+ticket's own plan calls for one VM at a time, explicit go-ahead
+*specifically for each reboot*, with an idle/in-progress-work check
+immediately before each one; that check never got a chance to run for
+wk-1/wk-2 before they went down, since nobody knew a reboot was
+imminent. In substance a real reboot did occur on all three nodes (the
+actual mechanism this ticket needs), but the planned one-at-a-time
+sequencing was not what actually happened for two of the three — this
+is recorded as a real deviation, not retroactively treated as
+equivalent to the planned process.
+
+Post-hoc mitigation taken once discovered: full stateful-service health
+check run against wk-1/wk-2 (which host Postgres/Redis/Longhorn,
+PX-022) — Longhorn volumes/replicas (`attached`/`healthy`/`running`,
+correct 2× split, ages unchanged, no rebuild triggered), Postgres pod
+(0 restarts) and its marker row (`created_at` predates the reboot,
+untouched), Redis pods (0 restarts) and its `px009-check` key (`ok`)
+plus live replication (`state=online`, `lag=0`) all confirmed clean. No
+data loss or corruption resulted, but that's a fortunate outcome
+verified after the fact, not something the process was designed to
+guarantee in advance.
+
+**Lesson for future tickets:** changing `memory.floating` (and
+potentially other hardware-affecting VM attributes) via the bpg/proxmox
+provider can trigger an implicit reboot at `apply` time, not just a live
+config write. For this class of Terraform change, the explicit,
+per-VM, "confirm nothing in-progress first" go-ahead needs to happen
+**before `terraform apply` itself**, not before a separately-scheduled
+`reboot` command — by the time apply finishes, the reboot may have
+already happened. Check `terraform plan`'s output and, if unclear
+whether an attribute is hot-reconfigurable, assume it may force a reboot
+and gate approval accordingly.
+
 **Acceptance criteria:**
-- [ ] `terraform plan` reviewed before apply — confirms only the
-      `balloon` value changes, nothing else
-- [ ] All three VMs rebooted with explicit go-ahead per VM, same
-      idle/in-progress-work checks as PX-016
-- [ ] Memory gauge monitored over an extended window (hours) post-reboot
+- [x] `terraform plan` reviewed before apply — confirmed only the
+      `balloon` (`memory.floating`) value changed, nothing else
+- [x] All three VMs rebooted — cp-1 with explicit go-ahead immediately
+      before its reboot, same idle/in-progress-work check as PX-016;
+      wk-1/wk-2 rebooted via an *unintended path* (implicit reboot
+      during `terraform apply`, not a separately-authorized reboot
+      command) — see process-deviation note above. Satisfied in
+      substance (a real reboot occurred on all three), explicitly not
+      equivalent to the planned one-at-a-time process for wk-1/wk-2.
+- [x] Memory gauge monitored over an extended window (hours) post-reboot
       to confirm it stays accurate as page cache fills — the actual gap
-      in PX-016's original verification
-- [ ] `docs/TICKETS.md` PX-016 gets a correction note pointing here,
+      in PX-016's original verification. Checked twice, ~2 hours apart
+      (`~2h` and `~3h13m` post-reboot uptime): cp-1 56.0%→55.5%,
+      wk-1 51.0%→51.7%, wk-2 35.0%→35.9% — flat, no drift toward 100%,
+      and closely tracking real `kubectl top nodes` usage both times
+      (cp-1 43-44%, wk-1 50-51%, wk-2 32-34%). This is the specific
+      window PX-016 never checked — its false "fixed" reading held for
+      "a few hours" before silently drifting back; here the same
+      multi-hour window was explicitly re-checked and held stable.
+- [x] `docs/TICKETS.md` PX-016 gets a correction note pointing here,
       since its DONE status/root-cause conclusion turned out to be
       incomplete — history isn't rewritten, but not left misleading
-      either
-- [ ] `docs/SPEC.md` updated if the resource-budget section needs a note
-      about ballooning being enabled
+      either. Already present (dated 2026-08-01, written when this
+      ticket was originally drafted) — verified accurate against what
+      actually shipped, not just present. PX-007 also given a forward-
+      pointing addendum for the same reason (see below) — its own
+      correction note predates PX-016/PX-023 and stopped at "leading
+      theory," never confirmed.
+- [x] `docs/SPEC.md` updated if the resource-budget section needs a note
+      about ballooning being enabled — checked, not needed: §3's cp-1
+      role line was suspected stale mid-ticket (an earlier draft
+      justification claimed cp-1 now runs ArgoCD/Longhorn control-plane
+      components) but that claim was verified false against `SPEC.md`
+      itself and PX-022 — the line was already accurate and left
+      untouched. No resource-budget change resulted from enabling
+      ballooning (dedicated memory unchanged, only the reclaim floor
+      added), so no note was needed there either.
+
+**Root-cause chain across three tickets, for anyone landing on any one
+of them:** PX-007 fixed "Proxmox has no guest memory data at all"
+(missing `qemu-guest-agent`). PX-016 fixed "the gauge looks right for a
+few hours, then drifts back to ~100%" — actually just a page-cache reset
+from a reboot masking the real problem, not a fix. This ticket (PX-023)
+fixes the actual mechanism: without a non-zero `balloon`/`memory.floating`
+value, Proxmox has no real memory-pressure telemetry from the guest and
+falls back to something close to `total - free`, which trends toward
+100% on *any* healthy long-running Linux guest since Linux deliberately
+keeps `free` near zero (spare RAM used for reclaimable disk cache, by
+design). Enabling ballooning gives Proxmox the actual purpose-built
+mechanism for this — verified stable over a multi-hour window above, not
+just immediately post-reboot.
 
 ---
 
