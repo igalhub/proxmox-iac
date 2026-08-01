@@ -2043,7 +2043,20 @@ safety net beyond PX-020's standing backup story.
 
 ## PX-023 — Enable VM ballooning; PX-016's memory-gauge fix was incomplete
 
-**Status:** OPEN
+**Status:** DONE — closed out 2026-08-01 (PR #63, `18d2e50`). All
+acceptance criteria met with real evidence: `terraform plan`/`apply`
+confirmed scoped to only `memory.floating`; all 3 nodes rebooted and
+confirmed `balloon` live in `qm config`; a process deviation (wk-1/wk-2
+rebooted implicitly during `apply`, not via the planned per-VM
+go-ahead) caught, investigated, and documented rather than glossed over,
+with Longhorn/Postgres/Redis health independently reconfirmed clean
+afterward; gauge monitored stable across a multi-hour post-reboot window
+(~2h and ~3h13m checks), tracking real `kubectl top nodes` usage both
+times — the specific verification gap that closed PX-016 prematurely.
+PX-007 and PX-016 both given correction addenda tying the full
+three-ticket root-cause chain together. CI green (ansible-lint/ruff/
+shellcheck/terraform), merged via `gh pr merge --squash --delete-branch`,
+branch cleaned up locally + on origin.
 
 **Background:** During PX-022, igalhub reported the Proxmox memory gauge
 maxed out again on wk-1/wk-2 — the same symptom PX-016 closed out as
@@ -2272,5 +2285,5 @@ considering the old one retired.
 | PX-020 | Real Postgres backup story (WAL-E/WAL-G) | DONE |
 | PX-021 | MetalLB for a real LoadBalancer IP instead of NodePort | DONE |
 | PX-022 | Longhorn distributed storage (Postgres/Redis PVs) | DONE |
-| PX-023 | Enable VM ballooning; PX-016's memory-gauge fix was incomplete | OPEN |
+| PX-023 | Enable VM ballooning; PX-016's memory-gauge fix was incomplete | DONE |
 | PX-024 | Rotate the MinIO backup-admin credential | OPEN |
