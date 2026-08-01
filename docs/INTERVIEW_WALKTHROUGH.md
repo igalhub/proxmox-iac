@@ -458,6 +458,67 @@ prematurely in the first place.
 
 ---
 
+## Step 14 — Alertmanager, and two real bugs found by actually deploying (PX-025, done)
+
+**What it is:** PX-023's own process-deviation finding (a disruption
+that went undetected until a human happened to check `uptime`) and the
+Jenkins crash-loop it caused, undetected for hours until igalhub hit a
+503 directly — both are the same underlying problem: nothing in this
+cluster ever pushed information anywhere. Prometheus/Grafana (Step 8)
+require someone to go look. Alertmanager closes that gap: two curated
+rules (`CrashLoopBackOff`, `PodNotReady`-for-10m — deliberately small,
+not a broad sweep, to avoid trading "nobody notices" for "everyone
+tunes it out") wired to Telegram as the sole channel this pass, chosen
+specifically because it reaches a phone away from the machine, not just
+another place information sits waiting to be checked.
+
+**The two bugs, worth telling in full — this is the deeper answer if
+asked "walk me through debugging something that didn't work as
+expected":**
+
+1. The first implementation injected the Telegram bot token via
+   Alertmanager's supposed `--config.expand-env` flag. Real deploy
+   against the live cluster crash-looped immediately:
+   `"unknown long flag '--config.expand-env'"`. That flag never existed
+   for Alertmanager — confirmed directly via the container's own
+   `--help` output before writing a fix, not by re-reading
+   documentation harder. Fixed with the actual supported mechanism:
+   `telegram_configs`' native `bot_token_file`/`chat_id_file` fields,
+   reading from the same SealedSecret mounted as files — verified
+   against a throwaway pod (checked for schema-parse errors) before
+   trusting it a second time.
+2. The real-trigger test — deliberately breaking a disposable pod and
+   confirming the alert actually fires and a message actually arrives,
+   not just checking rule syntax — caught a second, unplanned bug: the
+   `PodNotReady` rule fired on a real pod, `jenkins/helm-debug`, a
+   `Completed` one-shot debug pod from days earlier that will never be
+   `Ready` again *by design*. A textbook alert-fatigue false positive,
+   caught before it shipped rather than a week into production nagging.
+   Fixed by restricting the rule to pods actually in the `Running`
+   phase.
+
+**The real-trigger test itself is the strongest answer here, if asked
+"how do you know your alerting actually works":** not "the YAML is
+valid" — a real pod was deliberately broken, watched through its actual
+lifecycle to `CrashLoopBackOff`, through Prometheus's scrape picking up
+the metric, through the alert going `pending` then `firing` after its
+real `for` window, through Alertmanager dispatching it
+(`alertmanager_notifications_total` incremented, zero failures), to
+**igalhub confirming the literal Telegram message arrived** on his
+phone, pasted back with matching labels. The `PodNotReady` false
+positive delivered for real too, before its fix — a second, unplanned
+but equally genuine proof the whole pipeline works end to end, not just
+the one deliberately staged test.
+
+**Why this is worth telling over a cleaner-sounding success story:**
+both bugs were found by actually deploying and actually triggering a
+failure, not by careful reading in advance — and both were caught and
+fixed *before* shipping, which is the entire point of doing the
+real-trigger verification instead of stopping at "the config looks
+right."
+
+---
+
 ## Non-goals — know these cold, they preempt a certain kind of question
 
 - **No HA control-plane** — single control-plane node is an accepted,
@@ -497,4 +558,7 @@ of a NodePort; Postgres and Redis both run on Longhorn (distributed,
 replicated storage) instead of `local-path`. **Step 13 (PX-023) is
 done**: the Proxmox memory-gauge issue is fully resolved (ballooning
 enabled via Terraform), closing out a three-ticket root-cause chain
-that started back at PX-007. Live status: `docs/TICKETS.md`.
+that started back at PX-007. **Step 14 (PX-025) is done**: Alertmanager
++ Telegram alerting is live, verified via a real triggered failure that
+a human confirmed actually reached his phone. Live status:
+`docs/TICKETS.md`.
