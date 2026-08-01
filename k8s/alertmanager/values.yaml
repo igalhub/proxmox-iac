@@ -16,26 +16,22 @@ resources:
   limits:
     memory: 128Mi
 
-# Bot token/chat ID never touch this file or git: Alertmanager's native
-# env-var expansion (--config.expand-env, below) substitutes the
-# ${TELEGRAM_*} placeholders in config.route/receivers at container
-# start, sourced from the alertmanager-telegram SealedSecret — same
-# secretKeyRef pattern used everywhere else in this repo (e.g. WAL-G's
-# AWS_* env vars), not a new mechanism invented for this ticket.
-extraArgs:
-  config.expand-env: "true"
-
-extraEnv:
-  - name: TELEGRAM_BOT_TOKEN
-    valueFrom:
-      secretKeyRef:
-        name: alertmanager-telegram
-        key: botToken
-  - name: TELEGRAM_CHAT_ID
-    valueFrom:
-      secretKeyRef:
-        name: alertmanager-telegram
-        key: chatId
+# Bot token/chat ID never touch this file or git: an earlier draft tried
+# Alertmanager's --config.expand-env, but real verification (not
+# assumed) showed that flag doesn't exist in this Alertmanager version
+# (v0.33.1) — "unknown long flag", confirmed via the container's own
+# --help output before deploying for real. Correct mechanism, verified
+# the same way (a throwaway pod, checked for schema-parse errors before
+# trusting it): telegram_configs' own bot_token_file/chat_id_file
+# fields, reading straight from the mounted SealedSecret — same
+# secretKeyRef-equivalent pattern used everywhere else in this repo,
+# just file-based rather than env-based since Alertmanager's receiver
+# schema supports it natively for exactly this purpose.
+extraSecretMounts:
+  - name: telegram-secret
+    mountPath: /etc/alertmanager-secrets
+    secretName: alertmanager-telegram
+    readOnly: true
 
 config:
   enabled: true
@@ -49,7 +45,7 @@ config:
   receivers:
     - name: telegram
       telegram_configs:
-        - bot_token: "${TELEGRAM_BOT_TOKEN}"
-          chat_id: ${TELEGRAM_CHAT_ID}
+        - bot_token_file: /etc/alertmanager-secrets/botToken
+          chat_id_file: /etc/alertmanager-secrets/chatId
           parse_mode: "HTML"
           send_resolved: true
