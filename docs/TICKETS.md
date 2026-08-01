@@ -2211,9 +2211,13 @@ just immediately post-reboot.
 
 ## PX-024 — Rotate the MinIO backup-admin credential
 
-**Status:** OPEN — implementation complete, awaiting independent
-close-out per this repo's convention (implementer doesn't self-close).
-Decision made: **rotate**, not accept-as-is — `backup-admin` is
+**Status:** DONE — closed out 2026-08-01 (PR #66, `2561a97`).
+Independently re-verified before flipping status (not trusted from the
+implementation PR's own report alone): both MinIO and the Postgres pod
+still `1/1 Running`/`0` restarts several minutes after their rotation
+restarts, continuous WAL archiving still landing new segments in MinIO
+under the new credential. Decision made: **rotate**, not accept-as-is —
+`backup-admin` is
 confirmed the literal MinIO *root* credential (`rootUser`, verified live
 via `kubectl get secret minio-auth -o jsonpath='{.data.rootUser}'`), not
 a scoped least-privilege user, so a leak has full blast radius against
@@ -2345,4 +2349,4 @@ in practice the gap was well under a minute).
 | PX-021 | MetalLB for a real LoadBalancer IP instead of NodePort | DONE |
 | PX-022 | Longhorn distributed storage (Postgres/Redis PVs) | DONE |
 | PX-023 | Enable VM ballooning; PX-016's memory-gauge fix was incomplete | DONE |
-| PX-024 | Rotate the MinIO backup-admin credential | OPEN |
+| PX-024 | Rotate the MinIO backup-admin credential | DONE |
