@@ -42,10 +42,15 @@ Jenkinsfile   # CI pipeline run by the in-cluster Jenkins (PX-013)
 Cluster provisioned and running (Terraform + Ansible + k3s), core
 services (ingress, Redis, Postgres, Sealed Secrets), observability
 (Prometheus/Grafana), Jenkins, and the landing page are all live —
-build order steps 1-8 done. ArgoCD retrofit (step 8) is complete: all
+build order steps 1-9 done. ArgoCD retrofit (step 8) is complete: all
 10 existing releases (landing page, kube-state-metrics, node-exporter,
 Prometheus, Grafana, Jenkins, Postgres operator, Sealed Secrets, Redis,
-nginx-ingress) are adopted under GitOps. Live progress: `docs/TICKETS.md`.
+nginx-ingress) are adopted under GitOps. Step 9 (PX-020/021/022) is also
+done: a real, tested Postgres backup/restore story (WAL-G to in-cluster
+MinIO), ingress via a real dedicated LoadBalancer IP (MetalLB) instead
+of NodePort, and Postgres/Redis both migrated to Longhorn (distributed,
+replicated storage) instead of `local-path`. Live progress:
+`docs/TICKETS.md`.
 
 ## Setup
 
