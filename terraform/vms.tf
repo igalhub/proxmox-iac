@@ -1,10 +1,20 @@
 # cp-1/wk-1/wk-2 differ only in sizing/IP/VMID (docs/SPEC.md §3), so they're
 # generated from one resource via for_each rather than copy-pasted three times.
 locals {
+  # `memory_floating` maps to `balloon` in `qm config` (bpg/proxmox-ve
+  # provider) — the ballooning floor Proxmox can reclaim down to under
+  # host memory pressure. Without it (previously unset, defaulting to 0 /
+  # disabled) Proxmox can't read real guest memory-pressure stats and the
+  # dashboard gauge trends toward 100% on any healthy long-running Linux
+  # guest (PX-023; PX-016's reboot-only fix only reset the page cache).
+  # cp-1 gets a tighter floor (87.5%, 512MB reclaimable) than wk-1/wk-2
+  # (75%, 2048MB reclaimable) — it's the sole control-plane with no HA
+  # and runs etcd; losing it to reclaim pressure is categorically worse
+  # than a worker losing a scheduled pod, so it gets less room to give.
   nodes = {
-    "cp-1" = { vm_id = 110, ip_octet = 10, cores = 2, memory = 4096, disk_size = 40 }
-    "wk-1" = { vm_id = 111, ip_octet = 11, cores = 3, memory = 8192, disk_size = 60 }
-    "wk-2" = { vm_id = 112, ip_octet = 12, cores = 3, memory = 8192, disk_size = 60 }
+    "cp-1" = { vm_id = 110, ip_octet = 10, cores = 2, memory = 4096, memory_floating = 3584, disk_size = 40 }
+    "wk-1" = { vm_id = 111, ip_octet = 11, cores = 3, memory = 8192, memory_floating = 6144, disk_size = 60 }
+    "wk-2" = { vm_id = 112, ip_octet = 12, cores = 3, memory = 8192, memory_floating = 6144, disk_size = 60 }
   }
 }
 
@@ -28,6 +38,7 @@ resource "proxmox_virtual_environment_vm" "k3s_node" {
 
   memory {
     dedicated = each.value.memory
+    floating  = each.value.memory_floating
   }
 
   disk {
