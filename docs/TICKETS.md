@@ -2382,19 +2382,38 @@ same problem.
 **Description:** Deploy Alertmanager via its own Helm chart (the
 standard Prometheus-ecosystem companion, already half-built here since
 Prometheus + kube-state-metrics + node-exporter exist from PX-010) on
-`wk-1`, matching the existing observability role split. Wire it to
-Prometheus as an Alertmanager target. Start with a small, deliberately
-curated rule set — `CrashLoopBackOff` and `PodNotReady`-for-N-minutes —
-rather than trying to cover everything at once, to avoid the alert-
-fatigue trap of an overly broad initial rule set.
+`wk-1`, matching the existing observability role split. Same GitOps
+pattern as every service since PX-015 — a new ArgoCD Application
+(`k8s/argocd/apps/alertmanager.yaml`), not a manual `helm install`, same
+shape as MinIO/MetalLB/Longhorn's direct-through-ArgoCD installs. Wire
+it to Prometheus as an Alertmanager target. This project's `prometheus`
+release is the standalone community chart, not the Prometheus Operator
+— alerting rules and the Alertmanager target both get configured via
+`k8s/prometheus/values.yaml` (`serverFiles.alerting_rules.yml` /
+`alerting.alertmanagers`), not `PrometheusRule` CRDs; stated explicitly
+here so implementation doesn't have to rediscover it. Start with a
+small, deliberately curated rule set — `CrashLoopBackOff` and
+`PodNotReady`-for-N-minutes — rather than trying to cover everything at
+once, to avoid the alert-fatigue trap of an overly broad initial rule
+set.
 
-**Notification channel — decided:** Telegram as the primary channel via
-Alertmanager's native `telegram_configs` receiver (built into
-Alertmanager itself, not a generic webhook bolt-on). Chosen over the
-alternatives considered: Slack (rejected — not installed, and literal
-self-hosted Slack doesn't exist); email (rejected as primary — real, but
-doesn't push to a phone the way this problem actually needs); ntfy/
-Mattermost self-hosted (rejected as primary — solves the "no external
+**Real-trigger test target — decided in advance, not improvised
+mid-implementation:** the existing `k8s/test-app/hello.yaml` (PX-009's
+throwaway smoke-test app, already in the repo, already understood to be
+disposable/deletable) — redeployed with a deliberately broken
+image/command to trigger a real `CrashLoopBackOff`, confirm the alert
+fires and the Telegram message arrives, then deleted again. Explicitly
+not something already running in the cluster — this project just spent
+a whole ticket (PX-023's correction) on an unplanned real disruption; the
+verification step for *this* ticket should not become the next one.
+
+**Notification channel — decided, Telegram only this pass:** Telegram
+as the sole channel via Alertmanager's native `telegram_configs`
+receiver (built into Alertmanager itself, not a generic webhook
+bolt-on). Chosen over the alternatives considered: Slack (rejected — not
+installed, and literal self-hosted Slack doesn't exist); email (rejected
+— real, but doesn't push to a phone the way this problem actually
+needs); ntfy/Mattermost self-hosted (rejected — solves the "no external
 SaaS" goal but still requires installing a new app, same friction as
 Slack, for no better outcome than what's already installed); WhatsApp
 (ruled out entirely — no native Alertmanager receiver, and the only
@@ -2407,13 +2426,17 @@ looking — using an app he already has installed, via a native
 Alertmanager receiver, with no self-hosted component to run and
 maintain.
 
-Discord wired as a secondary channel — native Alertmanager receiver
-(`discord_configs`), trivial webhook setup, effectively free to add
-once the Alertmanager config exists either way. Explicitly not the
-primary: Discord is desktop-only as currently installed (Ubuntu
-machine), so it doesn't close the "away from the machine" gap Telegram
-does — it's a convenience channel for when Igal is already at that
-machine, not the real fix.
+**Discord — scope change, documented fallback only, not implemented
+this pass:** originally scoped as a secondary channel (native
+`discord_configs` receiver, trivial webhook setup). Deliberately cut
+from this ticket's acceptance criteria to keep the pass focused on
+proving the mechanism end-to-end on one channel first, rather than
+splitting verification effort across two. Recorded here as the known,
+cheap next step if a second channel is ever wanted — same native-receiver
+pattern, and (unlike Telegram) desktop-only as currently installed, so
+it would remain a convenience channel for when Igal is already at that
+machine, not a replacement for Telegram's "away from the machine"
+coverage.
 
 PagerDuty/Opsgenie-style dedicated on-call tooling deliberately out of
 scope — the real answer for true paging with on-call rotation at a
@@ -2421,20 +2444,27 @@ company, but disproportionate machinery for a single-operator home lab
 with no rotation to speak of. Same category of named non-goal as this
 project already uses for Vault and HA control-plane.
 
+**Dependency on igalhub, not something Developer role can do alone:** a
+Telegram bot must be created via BotFather (or an existing one reused)
+and its token handed over before implementation can proceed past the
+"seal the credential" step — this isn't something Claude Code can set up
+unilaterally, since it requires a real Telegram account action.
+
 **Acceptance criteria:**
-- [ ] Alertmanager installed via Helm on `wk-1`, wired as a Prometheus
-      target, confirmed via Prometheus's own `/api/v1/alertmanagers`
-- [ ] Telegram bot created via BotFather, token sealed the same way
-      every other credential in this repo is (SealedSecret, never
+- [ ] Alertmanager installed via ArgoCD Application on `wk-1`, wired as
+      a Prometheus target, confirmed via Prometheus's own
+      `/api/v1/alertmanagers`
+- [ ] Telegram bot token (from igalhub, via BotFather) sealed the same
+      way every other credential in this repo is (SealedSecret, never
       plaintext committed)
 - [ ] `CrashLoopBackOff` and `PodNotReady`-for-N-minutes rules
-      configured, confirmed via a real triggered test (not just "the
-      rule syntax is valid") — deliberately break something disposable,
-      confirm the Telegram message actually arrives
-- [ ] Discord webhook wired as a secondary receiver, same real-trigger
-      verification
-- [ ] `docs/SPEC.md` updated with the alerting architecture and the
-      channel decision/rationale above
+      configured, confirmed via a real triggered test against the
+      redeployed `k8s/test-app/hello.yaml` (not just "the rule syntax is
+      valid") — deliberately broken, confirm the Telegram message
+      actually arrives, then deleted again
+- [ ] `docs/SPEC.md` updated with the alerting architecture, the
+      Telegram-only channel decision/rationale above, and Discord's
+      documented-fallback status
 - [ ] `docs/TICKETS.md` PX-023 gets a forward-pointing note that this
       ticket is the direct response to its process-deviation finding
 
