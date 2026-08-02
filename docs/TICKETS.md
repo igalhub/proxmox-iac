@@ -2547,7 +2547,7 @@ from docs:**
 
 ## PX-026 — Export real Prometheus metrics for Redis, Postgres, Longhorn, MinIO
 
-**Status:** OPEN
+**Status:** DONE
 
 **Background:** Checked directly in Grafana's Explore metric browser
 (not assumed): none of Redis, Postgres, Longhorn, or MinIO currently
@@ -2659,6 +2659,42 @@ the committed manifests themselves always target `master`.
 - [x] No new dashboard required by this ticket — that's explicitly a
       follow-up once this lands
 
+**Close-out (QA role, 2026-08-02):** implementation PR (#79) merged to
+`master` (`8f63ca1`) first, since a clean post-merge re-verification is
+stronger evidence than trusting the branch's own pre-merge checks — the
+implementation PR's report was not taken at face value. Independent
+re-verification, fresh against live state, not a re-read of the
+implementation PR:
+
+1. **All 4 services' metrics still real and live, not stale samples**
+   — checked via each target's actual `lastScrape` age in Prometheus's
+   `/targets` API (not just an instant query's eval timestamp, which is
+   always "now" regardless of underlying sample age): `redis-master-0`
+   7s, `redis-replicas-0` 32s, `proxmox-iac-pg-0` 7s, `longhorn` 9s,
+   `minio` 3s — all comfortably inside the 1m scrape interval, real
+   ongoing scrapes. Fresh query values matched the implementation PR's
+   findings: `redis_connected_clients` 1/2, `pg_stat_database_numbackends`
+   app_db=2/postgres=4 (backend count moved from 3→4 since implementation,
+   consistent with a live connection count, not a frozen number),
+   `longhorn_replica_state{state="running"}=1`,
+   `minio_cluster_usage_object_total=218`.
+2. **Postgres pod stable since the sidecar-add settled:** `2/2 Running`,
+   `postgres`/`postgres-exporter` both `restarts=0`, `pg_is_in_recovery()`
+   = `false` (real query, primary accepting connections). PVC
+   `pgdata-proxmox-iac-pg-0` age 37h — predates the sidecar restart
+   entirely, confirming the same volume, not recreated.
+3. **Redis/Prometheus/MinIO ArgoCD Applications re-synced against
+   `master` directly** (hard-refresh + sync against commit `8f63ca1`,
+   not the already-torn-down feature branch) — all three `Synced`/
+   `Healthy` on the first check after reconciling.
+4. **No alerting regression:** both Prometheus's `/api/v1/alerts` and
+   Alertmanager's own `/api/v2/alerts` returned empty (`[]`) — PX-025's
+   pipeline stayed quiet throughout this ticket's live changes
+   (Postgres pod restart included).
+
+All four checks clean. Branch `feature/PX-026-metrics-export` deleted
+locally + on origin after merge.
+
 ---
 
 ## Ticket status
@@ -2690,4 +2726,4 @@ the committed manifests themselves always target `master`.
 | PX-023 | Enable VM ballooning; PX-016's memory-gauge fix was incomplete | DONE |
 | PX-024 | Rotate the MinIO backup-admin credential | DONE |
 | PX-025 | Alertmanager: catch a crash-looping/unhealthy pod automatically | DONE |
-| PX-026 | Export real Prometheus metrics for Redis, Postgres, Longhorn, MinIO | OPEN |
+| PX-026 | Export real Prometheus metrics for Redis, Postgres, Longhorn, MinIO | DONE |
