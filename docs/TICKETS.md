@@ -2545,6 +2545,75 @@ from docs:**
 
 ---
 
+## PX-026 — Export real Prometheus metrics for Redis, Postgres, Longhorn, MinIO
+
+**Status:** OPEN
+
+**Background:** Checked directly in Grafana's Explore metric browser
+(not assumed): none of Redis, Postgres, Longhorn, or MinIO currently
+export anything to Prometheus — searching `redis`, `postgres`,
+`longhorn`, and `minio` in the metric browser returns nothing for all
+four. The two dashboards provisioned in PX-010 (Node Exporter Full,
+Kubernetes cluster monitoring) only cover node- and pod-level metrics
+via node-exporter/kube-state-metrics — they say nothing about the
+actual stateful services this project is built around, which is the
+more interesting story for an interview walkthrough than generic node
+health. This ticket exists specifically to give a planned "project
+services" Grafana dashboard something real to query; the dashboard
+itself is a follow-up once this lands, not part of this ticket's own
+acceptance criteria.
+
+**Description:** Enable each service's own metrics export, then add it
+as a real Prometheus scrape target. This project's `prometheus` release
+is the standalone community chart, not the Prometheus Operator — new
+scrape targets get added via `k8s/prometheus/values.yaml`
+(`serverFiles.scrape_configs` / annotation-based `kubernetes_sd_configs`
+discovery, matching whatever this chart is already using for
+kube-state-metrics/node-exporter), not `ServiceMonitor` CRDs. State this
+explicitly per service rather than assuming a uniform mechanism, since
+each of the four gets there differently:
+
+- **Redis** — Bitnami chart's `metrics.enabled` flag turns on a
+  `redis_exporter` sidecar. Currently off in `k8s/redis/values.yaml`.
+- **Postgres** — the Zalando operator supports an exporter sidecar via
+  CR-level config. Not enabled on the live `postgresql-cr.yaml`; check
+  the operator's actual field name/mechanism directly against its docs
+  or CRD schema rather than assumed from memory.
+- **Longhorn** — already exposes a native `/metrics` endpoint on its
+  manager pods; just needs to be added as a scrape target, no chart
+  config change.
+- **MinIO** — same shape as Longhorn: already exposes `/metrics`
+  natively (Prometheus-compatible, needs a bearer token per MinIO's
+  admin API — check whether that needs its own scrape-auth wiring, not
+  assumed to be open), just needs to be added as a scrape target.
+
+**Verification standard, per service:** don't stop at "the exporter pod
+is running" — confirm the actual metric names show up in Prometheus's
+own metric browser or `/api/v1/label/__name__/values`, and that at least
+one real query against real data returns a sane, non-zero result (e.g.
+Redis's `redis_connected_clients`, Postgres's connection count,
+Longhorn's per-volume `robustness` state, MinIO's bucket size/object
+count). A target being `up` in Prometheus's `/targets` page is
+necessary but not sufficient — confirm real data, same discipline as
+every other ticket in this project.
+
+**Acceptance criteria:**
+- [ ] Redis: `metrics.enabled` turned on, `redis_exporter` confirmed
+      scraped, at least one real metric query returns live data
+- [ ] Postgres: exporter enabled via the operator's actual mechanism
+      (confirmed against real docs/CRD, not assumed), confirmed scraped
+      with live data
+- [ ] Longhorn: added as a scrape target, confirmed scraped with live
+      per-volume data
+- [ ] MinIO: added as a scrape target (auth wiring resolved if needed),
+      confirmed scraped with live data
+- [ ] `docs/SPEC.md` updated with each service's metrics-export
+      mechanism
+- [ ] No new dashboard required by this ticket — that's explicitly a
+      follow-up once this lands
+
+---
+
 ## Ticket status
 
 | Ticket | Title | Status |
@@ -2574,3 +2643,4 @@ from docs:**
 | PX-023 | Enable VM ballooning; PX-016's memory-gauge fix was incomplete | DONE |
 | PX-024 | Rotate the MinIO backup-admin credential | DONE |
 | PX-025 | Alertmanager: catch a crash-looping/unhealthy pod automatically | DONE |
+| PX-026 | Export real Prometheus metrics for Redis, Postgres, Longhorn, MinIO | OPEN |
