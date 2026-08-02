@@ -2851,6 +2851,73 @@ placeholder names from that ticket's original guesses):
 
 ---
 
+## PX-029 — Document two monitoring-stack quirks found via the new dashboard
+
+**Status:** OPEN
+
+**Background:** Found while igalhub compared the three now-live Grafana
+dashboards (Node Exporter Full, Kubernetes cluster monitoring, and
+PX-028's new project-services one) side by side. Both real, but neither
+is a bug — investigated directly rather than assumed either way, and
+worth writing down so a future session doesn't reopen either as a
+mystery or, worse, "fix" something that isn't broken.
+
+**Finding 1 — Node Exporter Full and Kubernetes cluster monitoring show
+different CPU/memory numbers for the same nodes, confirmed not a
+PX-027 regression.** Checked live (2026-08-02): Node Exporter Full's
+memory panels use `node_memory_MemAvailable_bytes`/`MemTotal_bytes`
+(the kernel's own reclaimable-aware estimate) — cp-1 39.0%, wk-1 29.5%,
+wk-2 26.0%. Kubernetes cluster monitoring's panels use cAdvisor's root
+cgroup `container_memory_working_set_bytes{id="/"}` over
+`machine_memory_bytes` (job `kubernetes-nodes-cadvisor`, confirmed via
+the dashboard's own panel queries — a job PX-027 never touched) — cp-1
+48.0%, wk-1 58.4%, wk-2 50.6%, meaningfully higher across the board.
+Root cause: cAdvisor's root-cgroup "working set" accounting doesn't
+exclude reclaimable page cache the way `MemAvailable` does — the same
+class of "total-minus-free trends high on any healthy Linux box"
+measurement gap this project already documented three times for
+Proxmox's own gauge (PX-007/PX-016/PX-023), just on the
+cAdvisor-vs-node-exporter axis instead of Proxmox-vs-guest. Proxmox's
+own PVE UI is a third, separate hypervisor-side measurement, already
+covered by that same three-ticket history.
+
+**Finding 2 — Node Exporter Full's `Job` dropdown still lists
+`kubernetes-service-endpoints` (the pre-PX-027 job) with node-exporter's
+old IPs, confirmed not currently live.** This is the nuance PX-027's own
+ticket text already flagged as expected and self-resolving, now
+confirmed directly: `node_uname_info{job="kubernetes-service-endpoints"}`
+returns empty for a live instant query (Prometheus marks the series
+stale after ~5m with no new sample), and `/api/v1/targets` confirms only
+`kube-dns`/`kube-state-metrics` are actually still scraped under that
+job — node-exporter's targets are fully gone from it. The old IPs
+persist in the `Job`/`Host` dropdowns only because Grafana's
+`label_values(metric, label)` variable query scans the *entire retained
+index* (up to the 7-day retention window), not just currently-live
+series — a frozen, historical label value, not active data. If someone
+selects the old job on that dashboard, panels will show a flat line
+frozen at whatever it was right before the PX-027 cutover, not growing
+data. Self-resolving once those blocks age out of retention; no action
+needed.
+
+**Description:** documentation only, no code/config change — add a
+short "known quirks" note covering both findings (with the real numbers
+above) somewhere a future session investigating either symptom would
+actually find it: `docs/SPEC.md` (near §12's metrics-export section,
+or a new short subsection) is the natural home, cross-referenced from
+this ticket.
+
+**Acceptance criteria:**
+- [ ] `docs/SPEC.md` documents Finding 1 (cAdvisor-vs-node-exporter
+      memory-accounting gap) with the real numbers, cross-referencing
+      the PX-007/PX-016/PX-023 root-cause chain it's structurally the
+      same story as
+- [ ] `docs/SPEC.md` documents Finding 2 (stale
+      `kubernetes-service-endpoints` job entries post-PX-027,
+      self-resolving via retention)
+- [ ] No code/config changes in this ticket — purely explanatory
+
+---
+
 ## Ticket status
 
 | Ticket | Title | Status |
@@ -2883,3 +2950,4 @@ placeholder names from that ticket's original guesses):
 | PX-026 | Export real Prometheus metrics for Redis, Postgres, Longhorn, MinIO | DONE |
 | PX-027 | node-exporter's dashboard shows raw IPs instead of hostnames | OPEN |
 | PX-028 | Build the "project services" Grafana dashboard | OPEN |
+| PX-029 | Document two monitoring-stack quirks found via the new dashboard | OPEN |
