@@ -49,7 +49,12 @@ nginx-ingress) are adopted under GitOps. Step 9 (PX-020/021/022) is also
 done: a real, tested Postgres backup/restore story (WAL-G to in-cluster
 MinIO), ingress via a real dedicated LoadBalancer IP (MetalLB) instead
 of NodePort, and Postgres/Redis both migrated to Longhorn (distributed,
-replicated storage) instead of `local-path`. Live progress:
+replicated storage) instead of `local-path`. VM memory-ballooning fixed
+(PX-023), the MinIO backup-admin credential rotated (PX-024),
+Alertmanager + Telegram alerting is live and verified end-to-end
+(PX-025), Redis/Postgres/Longhorn/MinIO all export real Prometheus
+metrics (PX-026), and node-exporter's dashboard now shows real
+hostnames instead of raw IPs (PX-027). Live progress:
 `docs/TICKETS.md`.
 
 ## Setup
