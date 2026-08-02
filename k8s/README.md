@@ -317,3 +317,19 @@ scraped via its own dedicated `extraScrapeConfigs` job
 (`k8s/prometheus/values.yaml`, `role: node` discovery) that sets
 `instance` from the real node name. Full trail in `docs/TICKETS.md`
 PX-027.
+
+## What's installed (PX-028)
+
+No new components — a hand-authored Grafana dashboard,
+"proxmox-iac — project services" (`k8s/grafana/values.yaml`'s
+`dashboards.default`), covering PX-026's Redis/Postgres/Longhorn/MinIO
+metrics. No community `gnetId` exists for this exact combination of
+services, and this Application's Grafana chart source can't reach a
+separate JSON file in this repo at Helm-template time (multi-source
+Application: chart from its upstream repo, values from this repo via
+`ref: values` — Helm's `.Files.Get` only reaches files bundled inside
+the chart itself), so the dashboard is embedded via the chart's own
+`json:` inline mechanism instead, same file the two PX-010 dashboards
+are already declared in. Two panels per service, using metric names
+confirmed live rather than assumed. Full trail in `docs/TICKETS.md`
+PX-028.

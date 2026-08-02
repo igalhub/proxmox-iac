@@ -53,9 +53,10 @@ replicated storage) instead of `local-path`. VM memory-ballooning fixed
 (PX-023), the MinIO backup-admin credential rotated (PX-024),
 Alertmanager + Telegram alerting is live and verified end-to-end
 (PX-025), Redis/Postgres/Longhorn/MinIO all export real Prometheus
-metrics (PX-026), and node-exporter's dashboard now shows real
-hostnames instead of raw IPs (PX-027). Live progress:
-`docs/TICKETS.md`.
+metrics (PX-026), node-exporter's dashboard now shows real
+hostnames instead of raw IPs (PX-027), and a hand-authored "project
+services" Grafana dashboard covers all four stateful services with
+real data (PX-028). Live progress: `docs/TICKETS.md`.
 
 ## Setup
 
