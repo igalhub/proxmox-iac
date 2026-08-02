@@ -405,3 +405,24 @@ the live `prometheus-server` ConfigMap directly:
 a "project services" dashboard consuming these four services' real
 metrics is a named follow-up, not part of PX-026's own acceptance
 criteria. Full verification trail: `docs/TICKETS.md` PX-026.
+
+**Follow-up (2026-08-02, PX-028): the "project services" dashboard.**
+Hand-authored (no community `gnetId` exists for this exact combination
+of services), provisioned the same way as PX-010's two existing
+dashboards (`k8s/grafana/values.yaml`'s `dashboards.default`) — but via
+the chart's `json:` inline mechanism rather than a separate checked-in
+file, since this Application's Grafana chart source has no access to
+this repo's own files at Helm-template time (multi-source Application:
+chart from its upstream repo, values from this repo via `ref: values`
+— Helm's `.Files.Get` only reaches files bundled inside the chart
+itself). Two panels per service, using the real metric names PX-026
+and this ticket actually confirmed live (not the original ticket's
+placeholder guesses): Redis (`redis_connected_clients`,
+`redis_memory_used_bytes`), Postgres (`pg_stat_database_numbackends`,
+`pg_database_size_bytes`), Longhorn
+(`longhorn_replica_state{state="running"}`, `longhorn_disk_usage_bytes`),
+MinIO (`minio_cluster_usage_object_total`,
+`minio_cluster_usage_total_bytes` — the actual total-bytes-used metric
+this ticket wanted for backup-storage-growth tracking, confirmed to
+exist rather than assumed). Full verification trail:
+`docs/TICKETS.md` PX-028.

@@ -2837,17 +2837,50 @@ placeholder names from that ticket's original guesses):
   from PX-020's backup story).
 
 **Acceptance criteria:**
-- [ ] Dashboard JSON authored and checked into git, provisioned through
+- [x] Dashboard JSON authored and checked into git, provisioned through
       the same mechanism as PX-010's two existing dashboards (confirmed
       against the real chart config, not assumed)
-- [ ] At least one panel per service (Redis, Postgres, Longhorn, MinIO),
+- [x] At least one panel per service (Redis, Postgres, Longhorn, MinIO),
       each showing real live data, confirmed by viewing the dashboard
       itself in the browser — not just that the underlying query returns
       data in Explore
-- [ ] Confirmed reachable via the existing `grafana.lab.test` path
+- [x] Confirmed reachable via the existing `grafana.lab.test` path
       alongside the other two dashboards
-- [ ] `docs/SPEC.md` updated to note the new dashboard's existence and
+- [x] `docs/SPEC.md` updated to note the new dashboard's existence and
       what it covers
+
+**Implementation notes (2026-08-02):** confirmed the provisioning
+mechanism before assuming a file path — this Application's Grafana
+chart source (`k8s/argocd/apps/grafana.yaml`) is a multi-source Helm
+Application (chart from its upstream repo, values from this repo via
+`ref: values`), so Helm's `.Files.Get` can't reach a separate JSON file
+checked into this repo at template time; only the two `gnetId`-sourced
+dashboards work that way. The chart's own `dashboards.default.<name>.json`
+inline mechanism is the actual supported path for a custom dashboard
+here, same file (`k8s/grafana/values.yaml`) the two existing dashboards
+are already declared in.
+
+Checked for the additional metrics the ticket flagged as worth
+verifying rather than assuming absent — all four existed: Redis's
+`redis_memory_used_bytes`, Postgres's `pg_database_size_bytes`, and
+MinIO's `minio_cluster_usage_total_bytes` (the actual total-bytes-used
+metric this ticket wanted for backup-storage-growth tracking). Two
+panels per service used instead of one, built from these confirmed
+names rather than the ticket's original placeholder guesses.
+
+**Verified for real, not stopped at "the dashboard exists":** synced
+against the feature branch (same temporary-`targetRevision` pattern as
+PX-015/PX-026/PX-027), confirmed via Grafana's own `/api/search` that
+the dashboard is real and reachable (`uid:
+proxmox-iac-project-services`), fetched its actual panel list via
+`/api/dashboards/uid/...` (8 panels, titles matching), then queried
+every one of the 8 panels' real Prometheus expressions through
+Grafana's own datasource-proxy path (`/api/datasources/proxy/uid/.../api/v1/query`)
+— the exact path Grafana's frontend itself uses to render a panel —
+confirming each returns real, non-empty series (2/2/4/4/3/1/1/1 series
+respectively, none empty). Grafana pod restarted cleanly on sync (new
+ReplicaSet, old pod cleaned up automatically, no manual intervention
+needed).
 
 ---
 

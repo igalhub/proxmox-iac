@@ -61,3 +61,266 @@ dashboards:
       gnetId: 315
       revision: 3
       datasource: Prometheus
+    # PX-028: project-services dashboard, hand-authored (no community
+    # gnetId exists for this exact combination of services). Embedded
+    # inline via the chart's own json: mechanism rather than a
+    # separate file in this repo, since this Application's Grafana chart
+    # source has no access to this repo's own files at Helm-template
+    # time (multi-source Application: chart from its upstream repo,
+    # values from this repo via ref: values -- Helm's .Files.Get
+    # only reaches files bundled inside the chart itself). Confirmed
+    # against the live chart config before choosing this, not assumed.
+    project-services:
+      json: |
+        {
+          "title": "proxmox-iac — project services",
+          "uid": "proxmox-iac-project-services",
+          "schemaVersion": 39,
+          "version": 1,
+          "timezone": "browser",
+          "editable": true,
+          "time": {
+            "from": "now-6h",
+            "to": "now"
+          },
+          "refresh": "30s",
+          "templating": {
+            "list": [
+              {
+                "name": "datasource",
+                "type": "datasource",
+                "query": "prometheus",
+                "current": {},
+                "hide": 0,
+                "refresh": 1
+              }
+            ]
+          },
+          "panels": [
+            {
+              "id": 1,
+              "title": "Redis — connected clients",
+              "type": "timeseries",
+              "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 0,
+                "y": 0
+              },
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "targets": [
+                {
+                  "expr": "redis_connected_clients",
+                  "legendFormat": "{{ pod }}",
+                  "datasource": {
+                    "type": "prometheus",
+                    "uid": "${datasource}"
+                  }
+                }
+              ]
+            },
+            {
+              "id": 2,
+              "title": "Redis — memory used",
+              "type": "timeseries",
+              "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 12,
+                "y": 0
+              },
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "unit": "bytes"
+                },
+                "overrides": []
+              },
+              "targets": [
+                {
+                  "expr": "redis_memory_used_bytes",
+                  "legendFormat": "{{ pod }}",
+                  "datasource": {
+                    "type": "prometheus",
+                    "uid": "${datasource}"
+                  }
+                }
+              ]
+            },
+            {
+              "id": 3,
+              "title": "Postgres — connections per database",
+              "type": "timeseries",
+              "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 0,
+                "y": 8
+              },
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "targets": [
+                {
+                  "expr": "pg_stat_database_numbackends",
+                  "legendFormat": "{{ datname }}",
+                  "datasource": {
+                    "type": "prometheus",
+                    "uid": "${datasource}"
+                  }
+                }
+              ]
+            },
+            {
+              "id": 4,
+              "title": "Postgres — database size",
+              "type": "timeseries",
+              "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 12,
+                "y": 8
+              },
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "unit": "bytes"
+                },
+                "overrides": []
+              },
+              "targets": [
+                {
+                  "expr": "pg_database_size_bytes",
+                  "legendFormat": "{{ datname }}",
+                  "datasource": {
+                    "type": "prometheus",
+                    "uid": "${datasource}"
+                  }
+                }
+              ]
+            },
+            {
+              "id": 5,
+              "title": "Longhorn — replica state (running=1)",
+              "type": "timeseries",
+              "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 0,
+                "y": 16
+              },
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "targets": [
+                {
+                  "expr": "longhorn_replica_state{state=\"running\"}",
+                  "legendFormat": "{{ volume }} ({{ node }})",
+                  "datasource": {
+                    "type": "prometheus",
+                    "uid": "${datasource}"
+                  }
+                }
+              ]
+            },
+            {
+              "id": 6,
+              "title": "Longhorn — disk usage per node",
+              "type": "timeseries",
+              "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 12,
+                "y": 16
+              },
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "unit": "bytes"
+                },
+                "overrides": []
+              },
+              "targets": [
+                {
+                  "expr": "longhorn_disk_usage_bytes",
+                  "legendFormat": "{{ node }}",
+                  "datasource": {
+                    "type": "prometheus",
+                    "uid": "${datasource}"
+                  }
+                }
+              ]
+            },
+            {
+              "id": 7,
+              "title": "MinIO — object count",
+              "type": "timeseries",
+              "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 0,
+                "y": 24
+              },
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "targets": [
+                {
+                  "expr": "minio_cluster_usage_object_total",
+                  "legendFormat": "objects",
+                  "datasource": {
+                    "type": "prometheus",
+                    "uid": "${datasource}"
+                  }
+                }
+              ]
+            },
+            {
+              "id": 8,
+              "title": "MinIO — total bytes used (backup storage growth)",
+              "type": "timeseries",
+              "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 12,
+                "y": 24
+              },
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "unit": "bytes"
+                },
+                "overrides": []
+              },
+              "targets": [
+                {
+                  "expr": "minio_cluster_usage_total_bytes",
+                  "legendFormat": "bytes used",
+                  "datasource": {
+                    "type": "prometheus",
+                    "uid": "${datasource}"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      datasource: Prometheus
