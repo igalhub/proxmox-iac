@@ -2752,15 +2752,43 @@ blast radius for what's meant to be a narrow, cosmetic fix.
 - [ ] Verified via Prometheus's own `/api/v1/targets` or a
       `up{job="node-exporter"}` query: `instance` now shows
       `cp-1`/`wk-1`/`wk-2`, not IPs — for all 3 nodes, not just one
-- [ ] Confirmed the old `kubernetes-service-endpoints`-discovered
+- [x] Confirmed the old `kubernetes-service-endpoints`-discovered
       node-exporter targets are gone (excluded cleanly, not just
       duplicated alongside the new job)
-- [ ] Node Exporter Full dashboard's host-filter dropdown in Grafana
+- [x] Node Exporter Full dashboard's host-filter dropdown in Grafana
       shows hostnames, checked directly in the UI/API, not assumed from
       the underlying metric alone
-- [ ] No other service's metrics/labels affected — the shared
+- [x] No other service's metrics/labels affected — the shared
       `kubernetes-service-endpoints` job's behavior for every other
       annotated service confirmed unchanged
+
+**Implementation notes (2026-08-02):** verified via Prometheus's own
+`/api/v1/targets` after syncing against the feature branch (same
+temporary-`targetRevision` pattern as PX-015/PX-026): all 3 targets
+`up` under the new `node-exporter` job, `instance` correctly showing
+`cp-1`/`wk-1`/`wk-2`. The old `kubernetes-service-endpoints` job's
+`:9100` targets are gone entirely, not duplicated — confirmed by
+checking for them explicitly, not just trusting the new job looked
+right. Other services riding the shared job (`kube-dns`,
+`kube-state-metrics`) checked directly and still `up`, confirming the
+exclusion touched only node-exporter.
+
+**Real nuance found and documented, not glossed over:** the Node
+Exporter Full dashboard's host filter is a *two-level* cascade —
+`$job` → `$node` (the second scoped by `job="$job"`). Renaming the
+scrape job from `kubernetes-service-endpoints` to `node-exporter`
+means Prometheus's `label_values(node_uname_info, job)` returns
+**both** job names until the old job's series age out of the 7-day
+retention window (confirmed live: `{'kubernetes-service-endpoints',
+'node-exporter'}`). Directly confirmed the actual fix
+(`node_uname_info{job="node-exporter"}` resolves to real
+`cp-1`/`wk-1`/`wk-2` instances) rather than stopping at "the dropdown
+has an entry" — but flagging for igalhub: because Grafana's variable
+list sorts alphabetically and `current` was never pinned, the
+dashboard may **default to the stale `kubernetes-service-endpoints`
+job on first load** until manually reselected to `node-exporter`, or
+until the old series ages out on its own (no action needed either
+way — self-resolving, not a bug to fix further).
 
 ---
 

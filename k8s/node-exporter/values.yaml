@@ -17,3 +17,19 @@ resources:
     memory: 16Mi
   limits:
     memory: 32Mi
+
+# PX-027: the chart's own default `service.annotations` sets
+# `prometheus.io/scrape: "true"`, which puts node-exporter through
+# Prometheus's shared, default `kubernetes-service-endpoints` job —
+# the same job every other annotated service in this cluster rides.
+# That job never relabels `instance` (only `node`), so node-exporter's
+# Grafana dashboard showed raw IPs instead of hostnames. Overriding the
+# same key here (not unsetting it — Helm's per-key map merge means an
+# empty override wouldn't actually remove the chart's own default)
+# excludes node-exporter from that shared job cleanly, so it can be
+# scraped instead by its own dedicated job
+# (k8s/prometheus/values.yaml's extraScrapeConfigs) that sets instance
+# to the real node name.
+service:
+  annotations:
+    prometheus.io/scrape: "false"
