@@ -95,3 +95,31 @@ extraScrapeConfigs: |
     static_configs:
       - targets:
           - minio.minio.svc.cluster.local:9000
+  # PX-027: node-exporter's dashboard showed raw IPs instead of hostnames
+  # because it rode the default kubernetes-service-endpoints job (shared
+  # with every other annotated service), which relabels `node` from pod
+  # metadata but never touches `instance`. Excluded from that job instead
+  # (k8s/node-exporter/values.yaml overrides its own service.annotations
+  # to prometheus.io/scrape: "false") and given this dedicated job:
+  # role: node discovery (same role this file's own kubernetes-nodes job
+  # already uses) yields __meta_kubernetes_node_name directly — the real
+  # node name, no detour through pod metadata needed. Port overridden to
+  # 9100 (node-exporter's own port; role: node's default __address__ is
+  # the kubelet's 10250) since the DaemonSet runs hostNetwork: true,
+  # confirmed live — each node's own address is already how it's reached.
+  - job_name: node-exporter
+    kubernetes_sd_configs:
+      - role: node
+    relabel_configs:
+      - action: labelmap
+        regex: __meta_kubernetes_node_label_(.+)
+      - source_labels:
+          - __meta_kubernetes_node_address_InternalIP
+        target_label: __address__
+        replacement: '${1}:9100'
+      - source_labels:
+          - __meta_kubernetes_node_name
+        target_label: instance
+      - source_labels:
+          - __meta_kubernetes_node_name
+        target_label: node
