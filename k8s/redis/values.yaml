@@ -9,6 +9,17 @@
 # migration happened via raw kubectl and never touched this file.
 architecture: replication
 
+# PX-026: redis_exporter sidecar. The chart's own default
+# `metrics.podAnnotations` (prometheus.io/scrape: "true",
+# prometheus.io/port: "9121") already matches this project's Prometheus
+# annotation-based pod discovery (k8s/prometheus's default
+# `kubernetes-pods` scrape job) exactly — confirmed by reading the live
+# prometheus-server ConfigMap's rendered scrape_configs before assuming
+# it, not from chart docs alone. No k8s/prometheus/values.yaml change
+# needed for this one.
+metrics:
+  enabled: true
+
 auth:
   existingSecret: redis-auth
   existingSecretPasswordKey: redis-password

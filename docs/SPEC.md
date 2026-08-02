@@ -332,3 +332,76 @@ through Alertmanager receiving and dispatching it
 incremented, zero failures), to igalhub confirming the real Telegram
 message arrived with matching labels/annotations. Full trail:
 `docs/TICKETS.md` PX-025.
+
+## 12. Stateful-service metrics export
+
+**Decision (2026-08-02, PX-026): per-service mechanism, not a uniform
+one.** Before PX-026, Redis/Postgres/Longhorn/MinIO exported nothing to
+Prometheus at all — the two PX-010 dashboards only ever covered
+node/pod-level health via node-exporter/kube-state-metrics. Checked
+each service's real chart/CRD rather than assuming a single pattern,
+since this project has no Prometheus Operator (no `ServiceMonitor`
+CRDs) — every mechanism below routes through the standalone
+`prometheus` chart's own default scrape config, confirmed by reading
+the live `prometheus-server` ConfigMap directly:
+
+- **Annotation-based discovery already exists by default** — the
+  chart's stock `kubernetes-pods`/`kubernetes-service-endpoints` jobs
+  auto-scrape anything carrying a `prometheus.io/scrape: "true"`
+  annotation (+ optional `prometheus.io/port`/`path`). No
+  `k8s/prometheus/values.yaml` change was needed for either service
+  below that already sets or supports this annotation.
+- **Redis** — `metrics.enabled: true` in `k8s/redis/values.yaml` turns
+  on the Bitnami chart's `redis_exporter` sidecar (port 9121); the
+  chart's own default `metrics.podAnnotations` already sets
+  `prometheus.io/scrape`/`port`, so it's picked up automatically.
+  Verified: `redis_connected_clients` returns real per-instance values
+  for both `redis-master-0` and `redis-replicas-0`.
+- **Postgres** — the `postgresql` CRD (`acid.zalan.do/v1`) has **no
+  dedicated exporter field**, confirmed against the live CRD schema
+  directly rather than assumed. The operator's own documented pattern
+  for this is its generic `spec.sidecars` array — added a
+  `postgres-exporter` container (`quay.io/prometheuscommunity/postgres-exporter:v0.20.1`)
+  reusing the already-existing `app-user...credentials` Secret (no new
+  credential minted), plus `spec.podAnnotations` (also a real CRD
+  field) to point the same default annotation-based discovery at its
+  port 9187. **Also found, deliberately not wired here:** Spilo's
+  bundled Patroni already exposes its own native `/metrics` on port
+  8008 (`patroni_primary`, `patroni_postgres_running`, xlog-position
+  gauges) with zero extra config — a different metric scope
+  (replication/HA state, not `pg_stat_*`) than this ticket's own
+  connection-count example, and annotation-based discovery only wires
+  one port per pod. Left as a named option for a future HA-focused
+  dashboard, not implemented. Verified:
+  `pg_stat_database_numbackends` returns real non-zero per-database
+  connection counts (`app_db`, `postgres`, etc.).
+- **Longhorn** — the chart sets no scrape annotations at all (only a
+  `metrics.serviceMonitor` block, Operator-only and unused here), so
+  its existing `/metrics` endpoint (already running on every
+  `longhorn-manager` pod, port 9500, no chart config change) is added
+  as an explicit `extraScrapeConfigs` static target in
+  `k8s/prometheus/values.yaml` against the stable `longhorn-backend`
+  Service DNS name. Verified: `longhorn_replica_state` returns real
+  per-volume/per-replica state (not a single "robustness" gauge, as
+  originally assumed in the ticket text — this is the real metric
+  shape in chart v1.12.0), plus real non-zero `longhorn_disk_usage_bytes`.
+- **MinIO** — same shape as Longhorn, no scrape annotations, added via
+  `extraScrapeConfigs` against `metrics_path: /minio/v2/metrics/cluster`.
+  **Auth correction, found only by checking live pod state, not
+  assumed either way:** the ticket flagged MinIO's metrics endpoint as
+  possibly needing bearer-token auth: `metrics.serviceMonitor.public`
+  gates `MINIO_PROMETHEUS_AUTH_TYPE` in the chart's own template — but
+  its **default value is already `true`**, and the live MinIO pod
+  already had `MINIO_PROMETHEUS_AUTH_TYPE=public` set before this
+  ticket touched anything (pod predates the change). The explicit
+  `metrics.serviceMonitor.public: true` added to
+  `k8s/minio/values.yaml` is a no-op against current chart behavior —
+  kept anyway to pin the decision explicitly rather than depend on an
+  undocumented upstream default silently changing later. Verified:
+  `minio_cluster_usage_object_total` (218) and `minio_cluster_bucket_total`
+  (1) both return real, sane non-zero data.
+
+**Explicitly out of scope for this ticket:** no new Grafana dashboard —
+a "project services" dashboard consuming these four services' real
+metrics is a named follow-up, not part of PX-026's own acceptance
+criteria. Full verification trail: `docs/TICKETS.md` PX-026.

@@ -49,3 +49,16 @@ service:
 
 consoleService:
   type: ClusterIP
+
+# PX-026: MinIO's /minio/v2/metrics/cluster endpoint requires a signed
+# admin JWT by default — confirmed by reading the chart's own template
+# (deployment.yaml), not assumed: `metrics.serviceMonitor.public: true`
+# is the flag that sets MINIO_PROMETHEUS_AUTH_TYPE=public internally,
+# regardless of serviceMonitor.enabled (which stays false — this project
+# has no Prometheus Operator, so the ServiceMonitor CRD itself is never
+# created). The chart sets no prometheus.io/scrape pod/service
+# annotations at all, so the scrape target itself is added explicitly in
+# k8s/prometheus/values.yaml's extraScrapeConfigs instead.
+metrics:
+  serviceMonitor:
+    public: true

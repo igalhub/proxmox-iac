@@ -85,3 +85,42 @@ spec:
     # in the running pod rather than guessing further.
     - name: WALG_DISABLE_S3_SSE
       value: "true"
+  # PX-026: real Postgres-level metrics (connection counts, pg_stat_database,
+  # etc.). Checked the CRD schema directly before assuming a mechanism: no
+  # dedicated "enable exporter" field exists — `sidecars` (arbitrary extra
+  # containers) is the operator's own documented pattern for this. Also
+  # found, but deliberately NOT wired here: Spilo's bundled Patroni already
+  # exposes a native /metrics endpoint on port 8008 (confirmed live,
+  # `patroni_postgres_running`/`patroni_primary`/xlog-position gauges) —
+  # useful for a future HA/replication-focused dashboard, but a different
+  # metric scope than this ticket's own example (connection count), and
+  # annotation-based discovery below only wires one port per pod. Left as
+  # a note for whoever adds the follow-up "project services" dashboard.
+  sidecars:
+    - name: postgres-exporter
+      image: quay.io/prometheuscommunity/postgres-exporter:v0.20.1
+      ports:
+        - name: metrics
+          containerPort: 9187
+          protocol: TCP
+      env:
+        - name: DATA_SOURCE_URI
+          value: "localhost:5432/app_db?sslmode=disable"
+        - name: DATA_SOURCE_USER
+          valueFrom:
+            secretKeyRef:
+              name: app-user.proxmox-iac-pg.credentials.postgresql.acid.zalan.do
+              key: username
+        - name: DATA_SOURCE_PASS
+          valueFrom:
+            secretKeyRef:
+              name: app-user.proxmox-iac-pg.credentials.postgresql.acid.zalan.do
+              key: password
+  # Same annotation-based discovery mechanism as Redis (k8s/redis's
+  # `metrics.podAnnotations`) — the CRD's own `podAnnotations` field
+  # (confirmed present in the schema before using it) lets this exporter
+  # get picked up by Prometheus's existing `kubernetes-pods` job with no
+  # k8s/prometheus/values.yaml change needed.
+  podAnnotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9187"

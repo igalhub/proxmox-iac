@@ -75,3 +75,23 @@ serverFiles:
             annotations:
               summary: "{{ $labels.namespace }}/{{ $labels.pod }} has not been Ready for 10m"
               description: "Pod {{ $labels.namespace }}/{{ $labels.pod }} has been reporting NotReady for over 10 minutes."
+
+# PX-026: Longhorn and MinIO both set no prometheus.io/scrape pod/service
+# annotations in their charts (confirmed by reading both charts'
+# templates directly — neither has an annotation-based discovery hook,
+# unlike Redis/Postgres below which reuse the default `kubernetes-pods`
+# job via podAnnotations instead). Static targets against each Service's
+# stable in-cluster DNS name, since both are single ClusterIP Services
+# that won't change — simpler than a kubernetes_sd_configs job for two
+# known, fixed targets.
+extraScrapeConfigs: |
+  - job_name: longhorn
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - longhorn-backend.longhorn-system.svc.cluster.local:9500
+  - job_name: minio
+    metrics_path: /minio/v2/metrics/cluster
+    static_configs:
+      - targets:
+          - minio.minio.svc.cluster.local:9000
