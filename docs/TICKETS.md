@@ -2697,6 +2697,73 @@ locally + on origin after merge.
 
 ---
 
+## PX-027 — node-exporter's dashboard shows raw IPs instead of hostnames
+
+**Status:** OPEN
+
+**Background:** Found while reviewing the Node Exporter Full dashboard
+(provisioned in PX-010) during PX-026 follow-up work: its host-filter
+dropdown lists `192.168.10.10`/`.11`/`.12` instead of `cp-1`/`wk-1`/`wk-2`.
+Root cause confirmed directly against the live `prometheus-server`
+ConfigMap and `/api/v1/targets`, not assumed: node-exporter is currently
+scraped via Prometheus's own shared, default
+`kubernetes-service-endpoints` job (annotation-based discovery, keyed on
+the `prometheus.io/scrape: "true"` annotation the chart sets on its own
+Service by default) — the same job every other annotated service in
+this cluster shares. That job's own relabel_configs already derive a
+correct `node` label from `__meta_kubernetes_pod_node_name`, but never
+touch `instance`, which stays the raw scrape address
+(`192.168.10.1{0,1,2}:9100`) — and that's the label Grafana's stock
+Node Exporter Full dashboard filters on.
+
+**Why not just add a relabel step to the existing job:** it's the
+community `prometheus` chart's own default `kubernetes-service-endpoints`
+job definition, shared by every other service using the same
+annotation-based pattern (Longhorn/MinIO's own PX-026 jobs are separate
+already; ArgoCD, kube-state-metrics, etc. still ride this default job).
+Editing it in place would change `instance` for every annotated service
+in the cluster, not just node-exporter — out of scope and unpredictable
+blast radius for what's meant to be a narrow, cosmetic fix.
+
+**Description:** two changes, kept minimal and targeted:
+1. `k8s/node-exporter/values.yaml` — override the chart's own default
+   `service.annotations` to set `prometheus.io/scrape: "false"`,
+   excluding node-exporter from the shared default job (same key,
+   overridden value — Helm's per-key map merge means this actually
+   takes effect, unlike trying to unset the key entirely).
+2. `k8s/prometheus/values.yaml`'s `extraScrapeConfigs` — add a
+   dedicated `node-exporter` job using `kubernetes_sd_configs: role: node`
+   (matching the same discovery role this repo's own `kubernetes-nodes`
+   job already uses, not a new pattern), which yields
+   `__meta_kubernetes_node_name` directly — the real node name, no
+   detour through pod metadata needed. Relabel `__address__` to the
+   node's InternalIP + node-exporter's fixed port (9100, confirmed live:
+   the DaemonSet runs `hostNetwork: true`, so each node's own address is
+   already how it's reached today), and set `instance` (and `node`, for
+   consistency with the label every other job in this file already
+   carries) from `__meta_kubernetes_node_name`.
+
+**Acceptance criteria:**
+- [ ] `k8s/node-exporter/values.yaml`: `service.annotations` explicitly
+      sets `prometheus.io/scrape: "false"`
+- [ ] `k8s/prometheus/values.yaml`: new `node-exporter` job added to
+      `extraScrapeConfigs`, `role: node` discovery, `instance` set from
+      `__meta_kubernetes_node_name`
+- [ ] Verified via Prometheus's own `/api/v1/targets` or a
+      `up{job="node-exporter"}` query: `instance` now shows
+      `cp-1`/`wk-1`/`wk-2`, not IPs — for all 3 nodes, not just one
+- [ ] Confirmed the old `kubernetes-service-endpoints`-discovered
+      node-exporter targets are gone (excluded cleanly, not just
+      duplicated alongside the new job)
+- [ ] Node Exporter Full dashboard's host-filter dropdown in Grafana
+      shows hostnames, checked directly in the UI/API, not assumed from
+      the underlying metric alone
+- [ ] No other service's metrics/labels affected — the shared
+      `kubernetes-service-endpoints` job's behavior for every other
+      annotated service confirmed unchanged
+
+---
+
 ## Ticket status
 
 | Ticket | Title | Status |
@@ -2727,3 +2794,4 @@ locally + on origin after merge.
 | PX-024 | Rotate the MinIO backup-admin credential | DONE |
 | PX-025 | Alertmanager: catch a crash-looping/unhealthy pod automatically | DONE |
 | PX-026 | Export real Prometheus metrics for Redis, Postgres, Longhorn, MinIO | DONE |
+| PX-027 | node-exporter's dashboard shows raw IPs instead of hostnames | OPEN |
