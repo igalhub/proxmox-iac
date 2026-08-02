@@ -2597,19 +2597,66 @@ count). A target being `up` in Prometheus's `/targets` page is
 necessary but not sufficient — confirm real data, same discipline as
 every other ticket in this project.
 
+**Implementation notes (2026-08-02):** confirmed the discovery
+mechanism before writing anything — the standalone `prometheus`
+chart's default scrape config already ships annotation-based discovery
+(`kubernetes-pods`/`kubernetes-service-endpoints` jobs, keyed on
+`prometheus.io/scrape`), read directly off the live `prometheus-server`
+ConfigMap, not assumed from chart docs. That meant only two of the
+four services needed a `k8s/prometheus/values.yaml` change at all —
+Redis and Postgres both route through existing pod annotations instead.
+Full per-service mechanism and two real corrections (Longhorn's actual
+metric shape; MinIO's auth flag already defaulting to `public`)
+documented in `docs/SPEC.md` §12.
+
+**Real corrections found during implementation, not assumed either
+way:**
+1. MinIO's metrics endpoint did **not** need any auth wiring — the
+   chart's `metrics.serviceMonitor.public` already defaults to `true`
+   (confirmed via the chart's own `deployment.yaml` template and via
+   the live pod's env, which already had
+   `MINIO_PROMETHEUS_AUTH_TYPE=public` set before this ticket touched
+   anything). The explicit values.yaml entry pins the decision rather
+   than changing behavior.
+2. Longhorn has no single `robustness` gauge as this ticket originally
+   assumed — the real per-volume metric in chart v1.12.0 is
+   `longhorn_replica_state` (per-replica, e.g. `state="running"`).
+   Verified against live data instead of the assumed metric name.
+
+**Verified for real, not from `/targets` `up` status alone:**
+- Redis: `redis_connected_clients` — real values for both
+  `redis-master-0` (1) and `redis-replicas-0` (2).
+- Postgres: `pg_stat_database_numbackends` — real non-zero per-database
+  connection counts (`app_db`=2, `postgres`=3).
+- Longhorn: `longhorn_replica_state{state="running"}`=1 for a real
+  volume replica, plus non-zero `longhorn_disk_usage_bytes`.
+- MinIO: `minio_cluster_usage_object_total`=218,
+  `minio_cluster_bucket_total`=1 — both real, matching the live WAL-G
+  backup bucket.
+
+Postgres's CR isn't ArgoCD-managed (per its own file header — applied
+directly via `kubectl apply` since PX-009), so its exporter sidecar was
+applied that way, not via a sync; the single-instance CR change caused
+one real, brief pod restart (confirmed `2/2 Running` after, 0 data
+loss — PVC untouched). Redis/Prometheus/MinIO changes verified
+pre-merge via ArgoCD's own pattern from PX-015: each Application's
+values-source `targetRevision` temporarily pointed at the feature
+branch, synced, verified, then pointed back at `master` before merge —
+the committed manifests themselves always target `master`.
+
 **Acceptance criteria:**
-- [ ] Redis: `metrics.enabled` turned on, `redis_exporter` confirmed
+- [x] Redis: `metrics.enabled` turned on, `redis_exporter` confirmed
       scraped, at least one real metric query returns live data
-- [ ] Postgres: exporter enabled via the operator's actual mechanism
+- [x] Postgres: exporter enabled via the operator's actual mechanism
       (confirmed against real docs/CRD, not assumed), confirmed scraped
       with live data
-- [ ] Longhorn: added as a scrape target, confirmed scraped with live
+- [x] Longhorn: added as a scrape target, confirmed scraped with live
       per-volume data
-- [ ] MinIO: added as a scrape target (auth wiring resolved if needed),
+- [x] MinIO: added as a scrape target (auth wiring resolved if needed),
       confirmed scraped with live data
-- [ ] `docs/SPEC.md` updated with each service's metrics-export
+- [x] `docs/SPEC.md` updated with each service's metrics-export
       mechanism
-- [ ] No new dashboard required by this ticket — that's explicitly a
+- [x] No new dashboard required by this ticket — that's explicitly a
       follow-up once this lands
 
 ---
