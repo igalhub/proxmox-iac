@@ -2792,6 +2792,65 @@ way — self-resolving, not a bug to fix further).
 
 ---
 
+## PX-028 — Build the "project services" Grafana dashboard
+
+**Status:** OPEN
+
+**Background:** PX-026 explicitly deferred dashboard-building from its
+own scope — it only proved real metrics exist. Now that they do (real,
+independently re-verified values for all four services), this ticket
+builds the actual dashboard: the two existing ones (PX-010) cover node-
+and pod-level health only, nothing about the stateful services this
+project is actually built around. This is the more interesting artifact
+for an interview walkthrough than generic node metrics.
+
+**Description:** One new dashboard, "proxmox-iac — project services,"
+provisioned as code — not clicked together in the Grafana UI and left
+living only in Grafana's own database, consistent with this project's
+whole "provisioned as code end to end" premise. Author the dashboard
+JSON directly (no community `gnetId` exists for this specific
+combination of services, unlike PX-010's two dashboards), check it into
+`k8s/grafana/dashboards/` (or wherever this project's existing dashboard
+provisioning already expects sideloaded JSON — confirm the chart's
+actual `dashboardsConfigMaps`/`dashboards` mechanism from
+`k8s/grafana/values.yaml` before assuming a path), and wire it through
+the same provisioning path as the two existing ones.
+
+Panels, using the real metric names PX-026 actually confirmed (not
+placeholder names from that ticket's original guesses):
+- **Redis** — `redis_connected_clients` (master vs. replica). Check
+  Explore for additional standard `redis_exporter` metrics
+  (`redis_memory_used_bytes`, replication-link status) before assuming
+  they're absent — PX-026 only confirmed one metric explicitly, more
+  may already be flowing.
+- **Postgres** — `pg_stat_database_numbackends` (per-database connection
+  count). Check for `pg_database_size_bytes`/transaction-rate metrics
+  the same way. Worth a passing note (not required for this ticket) that
+  Patroni's own `/metrics` on port 8008 — found but deliberately not
+  wired during PX-026 — would be the source for a future HA/replication
+  panel, different scope than this ticket.
+- **Longhorn** — `longhorn_replica_state{state="running"}` per volume,
+  plus `longhorn_disk_usage_bytes`.
+- **MinIO** — `minio_cluster_usage_object_total`,
+  `minio_cluster_bucket_total`, and check for a total-bytes-used metric
+  to show backup storage growth over time (the original motivating idea
+  from PX-020's backup story).
+
+**Acceptance criteria:**
+- [ ] Dashboard JSON authored and checked into git, provisioned through
+      the same mechanism as PX-010's two existing dashboards (confirmed
+      against the real chart config, not assumed)
+- [ ] At least one panel per service (Redis, Postgres, Longhorn, MinIO),
+      each showing real live data, confirmed by viewing the dashboard
+      itself in the browser — not just that the underlying query returns
+      data in Explore
+- [ ] Confirmed reachable via the existing `grafana.lab.test` path
+      alongside the other two dashboards
+- [ ] `docs/SPEC.md` updated to note the new dashboard's existence and
+      what it covers
+
+---
+
 ## Ticket status
 
 | Ticket | Title | Status |
@@ -2823,3 +2882,4 @@ way — self-resolving, not a bug to fix further).
 | PX-025 | Alertmanager: catch a crash-looping/unhealthy pod automatically | DONE |
 | PX-026 | Export real Prometheus metrics for Redis, Postgres, Longhorn, MinIO | DONE |
 | PX-027 | node-exporter's dashboard shows raw IPs instead of hostnames | OPEN |
+| PX-028 | Build the "project services" Grafana dashboard | OPEN |
