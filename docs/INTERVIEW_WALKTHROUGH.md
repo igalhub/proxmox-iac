@@ -560,5 +560,10 @@ done**: the Proxmox memory-gauge issue is fully resolved (ballooning
 enabled via Terraform), closing out a three-ticket root-cause chain
 that started back at PX-007. **Step 14 (PX-025) is done**: Alertmanager
 + Telegram alerting is live, verified via a real triggered failure that
-a human confirmed actually reached his phone. Live status:
-`docs/TICKETS.md`.
+a human confirmed actually reached his phone. **Step 15 (PX-026) is
+done**: Redis, Postgres, Longhorn, and MinIO all export real Prometheus
+metrics now, each via a mechanism confirmed against the live
+chart/CRD rather than assumed — giving a future "project services"
+dashboard something real to query (PX-027 fixed a related cosmetic gap
+in the same area: node-exporter's dashboard was filtering on raw IPs
+instead of hostnames). Live status: `docs/TICKETS.md`.

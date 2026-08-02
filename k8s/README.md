@@ -289,3 +289,31 @@ found via actual deployment and fixed (a nonexistent Alertmanager flag,
 a false-positive rule caught by the real-trigger test): full trail,
 including igalhub's confirmed real Telegram delivery, in
 `docs/SPEC.md` §11 and `docs/TICKETS.md` PX-025.
+
+## What's installed (PX-026)
+
+No new components — real Prometheus metrics wired up for four services
+that previously exported nothing:
+
+| Service | Mechanism |
+|---|---|
+| Redis | `metrics.enabled: true` (`k8s/redis/values.yaml`) — Bitnami's `redis_exporter` sidecar, auto-discovered via the chart's own default pod annotations |
+| Postgres | `postgres-exporter` sidecar added via the CR's `sidecars` field (`k8s/postgres-operator/postgresql-cr.yaml`) — no dedicated exporter flag exists in the operator's CRD |
+| Longhorn | explicit `extraScrapeConfigs` static target (`k8s/prometheus/values.yaml`) — the chart sets no scrape annotations |
+| MinIO | same shape as Longhorn — explicit `extraScrapeConfigs` static target; its metrics endpoint turned out to already be auth-open by chart default, not requiring the bearer-token wiring originally assumed |
+
+Full per-service mechanism, corrections found during implementation, and
+real verification evidence in `docs/SPEC.md` §12 and
+`docs/TICKETS.md` PX-026.
+
+## What's installed (PX-027)
+
+No new components — fixes node-exporter's Prometheus `instance` label
+showing raw IPs instead of hostnames (`cp-1`/`wk-1`/`wk-2`), which broke
+the Node Exporter Full dashboard's host filter. node-exporter is now
+excluded from the shared default annotation-based job
+(`k8s/node-exporter/values.yaml`'s `service.annotations` override) and
+scraped via its own dedicated `extraScrapeConfigs` job
+(`k8s/prometheus/values.yaml`, `role: node` discovery) that sets
+`instance` from the real node name. Full trail in `docs/TICKETS.md`
+PX-027.
