@@ -3101,6 +3101,16 @@ something to keep chasing.
 - [x] No code/config changes in this ticket — purely explanatory
 - [x] `docs/TICKETS.md` status table updated
 
+**Addendum (2026-08-04) — written up for upstream submission:** this
+finding was written up as a full bug report and committed to this repo
+at `docs/proxmox-bugzilla-memory-gauge-report.md` (real per-node
+percentage gaps, exact QMP field names/values, QEMU/guest kernel
+versions, and reproduction steps — all sourced from this ticket's own
+verified investigation, nothing new claimed). Linked from
+`docs/SPEC.md` §13's quirk 3 entry. **Not yet submitted to
+bugzilla.proxmox.com as of this writing — placeholder: once igalhub
+actually files it, replace this note with the real bug ID/URL.**
+
 ---
 
 ## Ticket status
