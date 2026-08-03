@@ -2699,7 +2699,10 @@ locally + on origin after merge.
 
 ## PX-027 — node-exporter's dashboard shows raw IPs instead of hostnames
 
-**Status:** OPEN
+**Status:** DONE — closed out 2026-08-02 (`fix(PX-027) #83`). All
+acceptance criteria verified (see implementation notes below); also
+reflected as done in `README.md`, `k8s/README.md`, and `docs/SPEC.md`
+§2.
 
 **Background:** Found while reviewing the Node Exporter Full dashboard
 (provisioned in PX-010) during PX-026 follow-up work: its host-filter
@@ -2794,7 +2797,9 @@ way — self-resolving, not a bug to fix further).
 
 ## PX-028 — Build the "project services" Grafana dashboard
 
-**Status:** OPEN
+**Status:** DONE — closed out 2026-08-02 (`feat(PX-028) #86`). Also
+reflected as done in `README.md`, `k8s/README.md`, and `docs/SPEC.md`
+§12.
 
 **Background:** PX-026 explicitly deferred dashboard-building from its
 own scope — it only proved real metrics exist. Now that they do (real,
@@ -2981,6 +2986,6 @@ this ticket.
 | PX-024 | Rotate the MinIO backup-admin credential | DONE |
 | PX-025 | Alertmanager: catch a crash-looping/unhealthy pod automatically | DONE |
 | PX-026 | Export real Prometheus metrics for Redis, Postgres, Longhorn, MinIO | DONE |
-| PX-027 | node-exporter's dashboard shows raw IPs instead of hostnames | OPEN |
-| PX-028 | Build the "project services" Grafana dashboard | OPEN |
+| PX-027 | node-exporter's dashboard shows raw IPs instead of hostnames | DONE |
+| PX-028 | Build the "project services" Grafana dashboard | DONE |
 | PX-029 | Document two monitoring-stack quirks found via the new dashboard | OPEN |
