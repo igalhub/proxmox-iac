@@ -505,4 +505,8 @@ was wrong. A small poller reading `stat-available-memory` via QMP and
 surfacing it somewhere was considered and rejected: Grafana/node-exporter
 already serves as the authoritative, already-correct source for this
 exact number, so a second path to the same data would be pure
-duplication. Full verification trail: `docs/TICKETS.md` PX-030.
+duplication. Full verification trail: `docs/TICKETS.md` PX-030. Full
+writeup, drafted for submission upstream as a Proxmox bug report (not
+yet filed as of this writing — see `docs/TICKETS.md` PX-030 for the
+bug-ID placeholder once it is):
+`docs/proxmox-bugzilla-memory-gauge-report.md`.
