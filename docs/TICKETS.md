@@ -404,6 +404,21 @@ rebooting — the specific gap that made PX-016's conclusion premature.
 Three tickets, one underlying story: PX-007 fixed "no data," PX-016
 fixed "looks right by accident," PX-023 fixed the actual measurement.
 
+**Correction (2026-08-04, PX-030):** the line above — "PX-023 fixed the
+actual measurement" — is wrong. PX-023's ballooning change didn't fix
+Proxmox's display; it just changed which cache-blind balloon stat
+Proxmox reads (`stat-free-memory`, still not reclaimable-aware), and
+its multi-hour verification window happened to be too short to catch
+the same cache-refill drift PX-016 already hit once. A direct QMP query
+confirmed the guest kernel has reported the correct, cache-aware number
+(`stat-available-memory`) the entire time — the break is in Proxmox's
+own stat-collection code never reading that field, a permanent upstream
+limitation, not something fixable from the guest side at all. Full
+root-cause trail: `docs/TICKETS.md` PX-030. PX-023's ballooning change
+itself is still correct and not being reverted — it gives Proxmox a
+real reclaim mechanism under genuine host memory pressure, independent
+of this display bug.
+
 ---
 
 ## PX-008 — k3s cluster bring-up
@@ -1470,6 +1485,18 @@ running straight through:**
       — gauge confirmed fixed, reason documented above (guest-agent
       memory-stat capability negotiated at boot, not live-activatable)
 
+**Correction (2026-08-04, PX-030):** "gauge confirmed fixed" above did
+not hold up. The reboot's real effect was resetting page cache to
+empty, which made the gauge look accurate for a few hours by
+coincidence — not a genuine fix. **This ticket's own step 5 correctly
+anticipated the actual outcome in advance** ("formally document
+Proxmox's own memory gauge as unreliable... designate in-cluster
+Grafana as the authoritative source") — that's exactly where this
+landed, three tickets later, once PX-030 traced the root cause all the
+way to a direct QMP query: the guest kernel reports the correct number
+the whole time, Proxmox's own `pvestatd` just never reads it. Full
+trail: `docs/TICKETS.md` PX-030.
+
 ---
 
 ## PX-017 — Narrow the ghcr.io push token's scope once the repo is public
@@ -2262,6 +2289,25 @@ design). Enabling ballooning gives Proxmox the actual purpose-built
 mechanism for this — verified stable over a multi-hour window above, not
 just immediately post-reboot.
 
+**Correction (2026-08-04, PX-030):** "this ticket (PX-023) fixes the
+actual mechanism" above is wrong as a display-gauge claim. igalhub
+reported the gauge diverging from Grafana again days later; a direct
+QMP query (`qom-get` on each VM's `balloon0` device) confirmed Proxmox
+was still reading `stat-free-memory` (cache-blind) into
+`ballooninfo.free_mem` — the same class of number as before, just
+sourced through the balloon device instead of a host-side fallback.
+The multi-hour verification window above happened to be too short to
+catch the same cache-refill drift PX-016 already hit once. The guest
+kernel has reported the correct, cache-aware `stat-available-memory`
+via QMP the entire time; Proxmox's own `pvestatd` simply never reads
+it — a genuine upstream Proxmox limitation, not fixable from the guest,
+guest-agent, or ballooning config. **This does not mean enabling
+ballooning was pointless or should be reverted** — `memory.floating`
+still gives Proxmox a real reclaim mechanism to use under genuine host
+memory pressure, entirely independent of the display bug. Only the
+belief that it fixed the gauge was wrong. Full trail:
+`docs/TICKETS.md` PX-030.
+
 ---
 
 ## PX-024 — Rotate the MinIO backup-admin credential
@@ -2963,6 +3009,100 @@ this ticket.
 
 ---
 
+## PX-030 — Correct PX-007/PX-016/PX-023: Proxmox's memory gauge is a confirmed permanent upstream limitation, not a fixable guest-side issue
+
+**Status:** DONE — closed out 2026-08-04. `docs/SPEC.md` §13 gained a
+third quirk with the full QMP-level root cause and real numbers;
+correction notes added to PX-007, PX-016, and PX-023 below, each
+pointing forward to this ticket. No code/config changes, per this
+ticket's own scope.
+
+**Background:** igalhub reported (2026-08-04) that Proxmox's CPU/RAM
+gauges for cp-1/wk-1/wk-2 were reading significantly higher than the
+day before and significantly higher than Grafana's node-exporter
+dashboard. Investigated live, not assumed:
+
+- Real usage (node-exporter `MemAvailable`-based, matching `free -h`
+  inside each guest) was healthy throughout: cp-1 ~40.0%, wk-1
+  ~29.7-30.1%, wk-2 ~26.7%. No actual memory pressure.
+- Proxmox's UI/`pvesh` showed cp-1 ~70.9%, wk-1 ~73.8-77.7%, wk-2
+  ~62.4-64.5% — a 30-47 point gap from real usage.
+- Confirmed via a direct QMP query (`qom-get` on each VM's `balloon0`
+  device, read-only, no state changed) that the guest kernel **already
+  reports the correct, cache-aware number** through virtio-balloon's
+  stats channel — `stat-available-memory` matched node-exporter's
+  `MemAvailable` almost exactly (cp-1: `2466406400` bytes via QMP vs.
+  `2465214464` via Prometheus, same instant). QEMU version
+  `pve-qemu-kvm 11.0.0-4`, guest kernel `6.8.0-136-generic`, both
+  modern enough to support this stat.
+- **Root cause: Proxmox's own `pvestatd`/status API never reads
+  `stat-available-memory` — it only reads `stat-free-memory` (raw free
+  pages, not reclaimable-cache-aware) into `ballooninfo.free_mem`, and
+  that's what both `pvesh` and the web UI gauge are built from.** The
+  correct data exists at the QMP/hypervisor level the entire time;
+  Proxmox's own product code simply never asks for it.
+
+**This corrects three prior "DONE" tickets' conclusions**, not just
+adds a new observation:
+- PX-007 diagnosed "no guest memory data" (missing qemu-guest-agent) —
+  correct fix for that specific gap, but treated the broader display
+  gap as solvable from the guest side.
+- PX-016 diagnosed "looks right by accident" — a reboot reset page
+  cache to empty, making `stat-free-memory` briefly close to
+  `stat-available-memory`, then drifted apart again as cache refilled.
+  Correctly identified the *symptom* (cache-fill drift) but concluded
+  the reboot fixed the *cause*.
+- PX-023 enabled VM ballooning (`memory.floating`), verified stable
+  over a multi-hour post-reboot window, and closed DONE believing it
+  fixed the actual mechanism. It didn't — it changed *which* balloon
+  stat Proxmox reads from (still `stat-free-memory`, still cache-blind),
+  and the multi-hour verification window happened to be too short to
+  catch the same cache-refill drift PX-016 already hit once.
+
+**None of the three "fixes" could have worked as display fixes**,
+because the break was never in the guest, the guest-agent, or the
+ballooning config — it's in Proxmox's own stat-collection code not
+reading a field QEMU already exposes. This is a genuine upstream
+Proxmox gap, not something Terraform/Ansible/this repo can patch.
+
+**PX-023's ballooning change itself is not being reverted or
+second-guessed — only the belief that it fixed the gauge is wrong.**
+Enabling `memory.floating` still provides real, independent value: it
+gives Proxmox an actual memory-reclaim mechanism it can use under
+genuine host-level memory pressure (shrinking a guest toward its floor
+before the host would otherwise swap or OOM). That's a real capability,
+separate from and unaffected by the display-gauge bug this ticket
+corrects. Nothing about PX-023's `terraform/vms.tf` change should be
+touched as a result of this ticket.
+
+**Considered and rejected: a small poller reading `stat-available-memory`
+via QMP directly and surfacing it somewhere (patch Proxmox's own display,
+or a standalone endpoint).** Technically feasible — the QMP query used
+to diagnose this ticket proves the data is reachable — but rejected:
+Grafana/node-exporter already serves as the authoritative, already-correct
+source for this exact number, so building and maintaining a second path
+to the same data would be pure duplication for zero new information.
+
+**Description:** documentation only, no code/config change (same scope
+as PX-029) — add a third quirk to `docs/SPEC.md` §13 explaining the
+QMP-level root cause, and a short forward-pointing correction note on
+each of PX-007, PX-016, and PX-023 (same pattern PX-023 used to correct
+PX-016). Establishes node-exporter/Grafana as the authoritative
+memory-usage source for this cluster going forward — Proxmox's own
+gauge should be treated as informationally unreliable, permanently, not
+something to keep chasing.
+
+**Acceptance criteria:**
+- [x] `docs/SPEC.md` §13 documents the QMP-level root cause with the
+      real numbers and the `stat-available-memory` vs.
+      `stat-free-memory` finding
+- [x] Correction notes added to PX-007, PX-016, and PX-023 in
+      `docs/TICKETS.md`, each pointing forward to this ticket
+- [x] No code/config changes in this ticket — purely explanatory
+- [x] `docs/TICKETS.md` status table updated
+
+---
+
 ## Ticket status
 
 | Ticket | Title | Status |
@@ -2996,3 +3136,4 @@ this ticket.
 | PX-027 | node-exporter's dashboard shows raw IPs instead of hostnames | DONE |
 | PX-028 | Build the "project services" Grafana dashboard | DONE |
 | PX-029 | Document two monitoring-stack quirks found via the new dashboard | DONE |
+| PX-030 | Correct PX-007/016/023: Proxmox memory gauge is a permanent upstream limitation | DONE |

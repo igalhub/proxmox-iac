@@ -470,3 +470,39 @@ once those blocks age out of retention; no action needed. This is the
 exact nuance PX-027's own ticket text flagged in advance as expected.
 
 Full verification trail: `docs/TICKETS.md` PX-029.
+
+**Quirk 3 — Proxmox's own memory gauge (UI and `pvesh`) is a confirmed
+permanent upstream limitation, not something fixable from this repo;
+node-exporter/Grafana is the authoritative source for this cluster's
+memory usage, permanently.** Found 2026-08-04 when igalhub reported
+Proxmox's CPU/RAM gauges reading significantly higher than the day
+before and significantly higher than Grafana's node-exporter dashboard.
+Real usage was healthy throughout (node-exporter `MemAvailable`-based,
+matching `free -h` inside each guest): cp-1 ~40.0%, wk-1 ~29.7-30.1%,
+wk-2 ~26.7%. Proxmox's UI/`pvesh` showed cp-1 ~70.9%, wk-1 ~73.8-77.7%,
+wk-2 ~62.4-64.5% — a 30-47 point gap, no actual resource pressure.
+
+Root cause confirmed via a direct QMP query (`qom-get` on each VM's
+`balloon0` device, read-only): the guest kernel already reports the
+correct, cache-aware number through virtio-balloon's stats channel —
+`stat-available-memory` matched node-exporter's `MemAvailable` almost
+exactly (cp-1: `2466406400` bytes via QMP vs. `2465214464` via
+Prometheus, same instant). **Proxmox's own `pvestatd`/status API never
+reads `stat-available-memory` — it only reads `stat-free-memory` (raw
+free pages, not reclaimable-cache-aware) into `ballooninfo.free_mem`,**
+and that's what both `pvesh` and the web UI gauge are built from. The
+correct data exists at the QMP/hypervisor level the entire time;
+Proxmox's own product code simply never asks for it.
+
+This corrects the conclusions of three prior tickets (PX-007, PX-016,
+PX-023 — each treated this as a guest-side problem and each partially
+"fixed" it by coincidence or misattribution) without undoing any of
+their actual changes: `qemu-guest-agent` (PX-007) and VM ballooning
+`memory.floating` (PX-023) both still provide real, independent value
+(guest telemetry access and an actual host-side reclaim mechanism,
+respectively) — only the belief that either fixed Proxmox's *display*
+was wrong. A small poller reading `stat-available-memory` via QMP and
+surfacing it somewhere was considered and rejected: Grafana/node-exporter
+already serves as the authoritative, already-correct source for this
+exact number, so a second path to the same data would be pure
+duplication. Full verification trail: `docs/TICKETS.md` PX-030.
