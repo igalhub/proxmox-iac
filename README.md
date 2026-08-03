@@ -56,7 +56,9 @@ Alertmanager + Telegram alerting is live and verified end-to-end
 metrics (PX-026), node-exporter's dashboard now shows real
 hostnames instead of raw IPs (PX-027), and a hand-authored "project
 services" Grafana dashboard covers all four stateful services with
-real data (PX-028). Live progress: `docs/TICKETS.md`.
+real data (PX-028). Two benign monitoring-stack quirks found comparing
+the three live dashboards are documented in `docs/SPEC.md` §13 (PX-029).
+Live progress: `docs/TICKETS.md`.
 
 ## Setup
 
