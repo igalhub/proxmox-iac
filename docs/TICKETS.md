@@ -3113,6 +3113,200 @@ actually files it, replace this note with the real bug ID/URL.**
 
 ---
 
+## PX-031 — pytest suite for `landing/`'s Prometheus-query logic
+
+**Status:** OPEN
+
+**Description:** The one component in this repo that's actual
+application code, currently with zero test coverage. Add
+`landing/tests/` with `pytest` + `pytest-httpx` (or `respx`) to mock
+Prometheus's `/api/v1/query` responses — no live Prometheus/cluster
+needed. Cover: `scalar()`'s empty-result fallback, `query_prometheus()`'s
+error propagation, `/` route's `error` path when Prometheus is
+unreachable (`httpx.HTTPError`) vs. malformed response
+(`KeyError`/`IndexError`), and `/healthz`. Add a `pytest` job to
+`.github/workflows/ci.yml` (guarded the same way the existing `ruff`
+job is — no-ops if `landing/` doesn't exist) and a corresponding
+`Makefile` `test` target update, replacing today's placeholder message
+for this one component (the other three layers stay manual until their
+own tickets land).
+
+**Sequencing:** first — lowest friction, standard tooling, no infra
+dependency, establishes the CI pattern (`pytest` job alongside `ruff`)
+the later static-check tickets can reuse. First of a five-ticket
+sequence (PX-031–PX-035) scoping automated testing across this
+project's four layers plus a codified live-cluster verification
+script, deliberately kept as small independently-reviewable tickets
+rather than one large "test suite" ticket.
+
+**Acceptance criteria:**
+- [ ] `landing/tests/` covers `scalar()`, `query_prometheus()`, both
+      `/` error paths, and `/healthz`
+- [ ] Tests run fully offline — no real Prometheus/cluster
+      reachability required
+- [ ] New `pytest` CI job added, guarded to no-op if `landing/`
+      doesn't exist, passing on a real PR
+- [ ] `Makefile`'s `test` target actually runs this suite instead of
+      only printing the placeholder message
+
+---
+
+## PX-032 — K8s manifest / Helm-values validation via kubeconform
+
+**Status:** OPEN
+
+**Description:** Schema-validate every rendered manifest under `k8s/`
+before it ever reaches `kubectl apply`/ArgoCD — catches malformed
+YAML, wrong `apiVersion`/`kind` fields, missing required fields at the
+schema level, independent of whether the cluster happens to be
+reachable. Extend `scripts/helm-lint-values.sh` (or add a sibling
+script) to pipe each chart's `helm template` output through
+`kubeconform` (with the CRD schemas this cluster actually uses —
+Longhorn, Zalando Postgres operator, MetalLB, Sealed Secrets — since
+kubeconform's default schema set won't know about them; needs its
+`-strict`/custom-schema-location flags investigated, not assumed to
+work out of the box). Add a CI job alongside `ansible-lint`.
+Static/offline only — validates shape, not live-cluster behavior.
+
+**Sequencing:** second of five (see PX-031) — builds directly on the
+existing `scripts/helm-lint-values.sh` pattern from PX-013, so it's a
+natural next step before moving to the two on-thesis skill gaps
+(Terraform/Ansible).
+
+**Acceptance criteria:**
+- [ ] Every chart's rendered `helm template` output validated via
+      kubeconform, covering all CRDs actually in use (not just
+      built-in K8s types)
+- [ ] Plain manifests (`k8s/landing-page/`, `k8s/test-app/`,
+      `k8s/metallb/config/`, `k8s/longhorn/config/`) also validated,
+      not just Helm-templated ones
+- [ ] Runs fully offline — no live cluster required
+- [ ] New CI job added, passing on a real PR
+- [ ] Any real schema violations found are fixed as part of this
+      ticket, not deferred
+
+---
+
+## PX-033 — Terraform native `terraform test`
+
+**Status:** OPEN
+
+**Description:** HCL-native `.tftest.hcl` files under
+`terraform/tests/`, using Terraform's built-in mock-provider support
+(`mock_provider`/`override_resource`) so assertions run against
+`terraform/vms.tf`'s logic — sizing per VM, static IP assignment,
+VMID-to-IP-octet correlation, ballooning floor values (cp-1 tighter
+than wk-1/wk-2) — without ever touching the real Proxmox host or its
+API token. Directly on-thesis: Terraform is one of the two named skill
+gaps this whole project exists to close (`docs/PRD.md`), so a real,
+defensible test suite here is a stronger interview artifact than the
+other three tickets combined.
+
+**Sequencing:** third of five (see PX-031) — after the two
+lower-friction static-check tickets establish the CI pattern, before
+the higher-friction Ansible ticket.
+
+**Acceptance criteria:**
+- [ ] `terraform/tests/*.tftest.hcl` covers per-VM sizing, static
+      IP/VMID correlation, and the PX-023 ballooning-floor values,
+      using mocked providers only
+- [ ] `terraform test` runs fully offline — confirmed via a clean run
+      with no Proxmox credentials/network access available
+- [ ] New CI job added (guarded the same way the existing `terraform`
+      job is), passing on a real PR
+- [ ] `docs/SPEC.md` §10 (Terraform state management) or a new
+      subsection notes this is a mocked/offline suite, explicitly not
+      a substitute for the real `terraform plan`/`apply` verification
+      every prior VM-affecting ticket has done by hand
+
+---
+
+## PX-034 — Ansible Molecule tests for `common`/`k3s-server`/`k3s-agent`
+
+**Status:** OPEN
+
+**Description:** Molecule-driven tests (Docker/Podman-backed
+disposable containers) for the three roles, going beyond
+`ansible-lint`'s static checks into actually running the roles and
+asserting on outcome — package installation, `deploy` user creation,
+sudoers content, SSH hardening lines present in `sshd_config`.
+Deliberately last and flagged as the most likely to hit real friction:
+these roles do real systemd-level work (`qemu-guest-agent` service
+management, `sshd` restarts via a handler, `visudo` validation) that
+doesn't map cleanly onto Molecule's typical minimal container images
+(no real systemd PID 1 in a plain Docker container without extra
+image/privileged-container work), and the k3s-server/k3s-agent roles'
+actual join logic has a genuine dependency on real file side-effects
+(already documented in PX-008 as something even `--check` mode can't
+fully verify). If Molecule's container model can't cleanly exercise
+the systemd-dependent tasks, document that honestly as this ticket's
+outcome — a partial suite (e.g. `common`'s non-systemd tasks covered,
+the systemd/SSH-restart pieces explicitly noted as still requiring the
+real VM verification this project already does by hand) is an
+acceptable, honest result, not a failure to force past.
+
+**Sequencing:** fourth/last of five (see PX-031) — the other named
+skill gap (Ansible), sequenced last on purpose since it's expected to
+be the messiest.
+
+**Acceptance criteria:**
+- [ ] Molecule scenario(s) added for at least the `common` role,
+      running fully offline (no real Proxmox VMs)
+- [ ] k3s-server/k3s-agent attempted; outcome documented honestly
+      either way — full coverage, partial coverage with a named
+      reason, or "not practical in a container, here's why" are all
+      acceptable closes for this ticket
+- [ ] Any systemd/container-model limitations hit are written up in
+      `docs/TICKETS.md` and, if architecturally relevant,
+      `docs/SPEC.md` — not silently worked around
+- [ ] CI job added only for whatever portion actually runs cleanly and
+      fast enough for CI; anything left manual is stated as such, not
+      left ambiguous
+
+---
+
+## PX-035 — `scripts/verify-live-cluster.sh`: codify the manual live-cluster verification ritual
+
+**Status:** OPEN
+
+**Description:** Every ticket this project has closed has run
+substantially the same live-cluster verification by hand: nodes
+`Ready`, ArgoCD Applications `Synced`/`Healthy`, ingress paths
+(`argocd`/`grafana`/`jenkins`/landing page/etc.) returning real
+`HTTP 200`, Prometheus targets `up`. Codify this into a real,
+versioned, reusable script — not a CI job, never auto-triggered —
+invoked deliberately by a human as part of a ticket's close-out, same
+discipline as today, just no longer memory-dependent or reinvented per
+ticket. This is the one ticket in this sequence that touches the live
+cluster at all, and it stays that way deliberately: no GitHub-hosted
+runner can reach this private network without a self-hosted runner
+(considered, deliberately out of scope — separate infrastructure with
+its own security surface), and auto-triggering anything against the
+shared home-lab host would contradict the explicit-human-go-ahead rule
+that's held for every state-changing action so far.
+
+**Sequencing:** independent of the other four (see PX-031) — can land
+anytime after PX-031 establishes the CI/script pattern, but isn't
+blocked by PX-032/PX-033/PX-034.
+
+**Acceptance criteria:**
+- [ ] `scripts/verify-live-cluster.sh` checks: all 3 nodes `Ready`,
+      every ArgoCD Application `Synced`/`Healthy`, a defined list of
+      ingress paths return `200`, Prometheus's `/api/v1/targets` shows
+      no `down` targets
+- [ ] Script requires an explicit invocation (never wired into CI,
+      never auto-triggered on push/PR/schedule)
+- [ ] Script is idempotent/read-only — no state-changing calls, safe
+      to run anytime without a go-ahead beyond "run this script"
+- [ ] Shellchecked clean, per this repo's hard rule for any committed
+      bash
+- [ ] Run once for real against the live cluster as this ticket's own
+      verification, output reviewed
+- [ ] `docs/SPEC.md` and/or `k8s/README.md` note this script as the
+      standard close-out verification step going forward
+
+---
+
 ## Ticket status
 
 | Ticket | Title | Status |
@@ -3147,3 +3341,8 @@ actually files it, replace this note with the real bug ID/URL.**
 | PX-028 | Build the "project services" Grafana dashboard | DONE |
 | PX-029 | Document two monitoring-stack quirks found via the new dashboard | DONE |
 | PX-030 | Correct PX-007/016/023: Proxmox memory gauge is a permanent upstream limitation | DONE |
+| PX-031 | pytest suite for landing/'s Prometheus-query logic | OPEN |
+| PX-032 | K8s manifest / Helm-values validation via kubeconform | OPEN |
+| PX-033 | Terraform native `terraform test` | OPEN |
+| PX-034 | Ansible Molecule tests for common/k3s-server/k3s-agent | OPEN |
+| PX-035 | scripts/verify-live-cluster.sh — codify live-cluster verification | OPEN |
