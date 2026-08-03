@@ -39,7 +39,7 @@ jobs:
           if [ -d terraform ] && compgen -G "terraform/**/*.tf" > /dev/null; then
             echo "present=true" >> "$GITHUB_OUTPUT"
           else
-            echo "present=true is false — Phase 1 (terraform/) not started yet"
+            echo "terraform/ not started yet, skipping"
             echo "present=false" >> "$GITHUB_OUTPUT"
           fi
 
