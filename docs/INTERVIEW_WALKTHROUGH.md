@@ -396,15 +396,15 @@ moving the disk it lives on, not after.
 
 ---
 
-## Step 13 — VM ballooning, and a three-ticket root-cause story (PX-023, done)
+## Step 13 — VM ballooning, and a four-ticket root-cause story (PX-023/PX-030, done)
 
 **What it is:** the Proxmox UI's memory gauge for all three VMs had been
 maxed out near 100% since early in the project — cosmetic, never a real
 resource problem (`kubectl top nodes` always showed real usage was low),
-but worth telling in full because the actual fix took three separate
-tickets to reach, each one correcting the last. That arc is a better
-answer to "tell me about a bug you had to dig into" than any single
-ticket in isolation.
+but worth telling in full because it took four separate tickets to find
+the actual, unfixable-from-this-repo root cause, each one correcting
+the last. That arc is a better answer to "tell me about a bug you had
+to dig into" than any single ticket in isolation.
 
 **PX-007 (misdiagnosis #1):** `qemu-guest-agent` was declared in
 Terraform (`agent.enabled = true`) but never actually installed by the
@@ -421,18 +421,33 @@ which happened to make a still-miscalibrated gauge read correctly for a
 few hours. The ticket closed `DONE` on that window without waiting long
 enough to see it drift back. It did, weeks later, caught during PX-022.
 
-**PX-023 (the real fix):** ballooning itself was never enabled
-(`balloon`/`memory.floating` unset, defaulting to disabled). Without a
-real balloon floor, Proxmox has no genuine memory-pressure telemetry
-from the guest and falls back to something close to `total - free` —
-which trends toward 100% on *any* healthy long-running Linux guest,
-since Linux deliberately keeps `free` near zero for reclaimable disk
-cache (by design, not a leak). Set a real non-zero `memory.floating` per
-VM via Terraform — tighter on cp-1 (87.5% floor) than wk-1/wk-2 (75%)
-given cp-1 is the sole control-plane node with no HA and runs etcd.
-Verified stable across a real multi-hour post-reboot window (not just
+**PX-023 (misdiagnosis #3 — fixed a real thing, but not the display):**
+ballooning itself was never enabled (`balloon`/`memory.floating` unset,
+defaulting to disabled). Set a real non-zero `memory.floating` per VM
+via Terraform — tighter on cp-1 (87.5% floor) than wk-1/wk-2 (75%) given
+cp-1 is the sole control-plane node with no HA and runs etcd. Verified
+stable across a real multi-hour post-reboot window (not just
 immediately after rebooting) — the specific verification gap that made
-PX-016's close premature.
+PX-016's close premature. Closed `DONE` believing this had fixed the
+gauge itself.
+
+**PX-030 (the actual root cause, and why it can't be fixed here):** days
+later the gauge diverged from Grafana again. A direct QMP query
+(`qom-get` on each VM's `balloon0` device, read-only) showed the guest
+kernel had been reporting the correct, cache-aware
+`stat-available-memory` the entire time — it matched node-exporter's
+real numbers almost exactly. **Proxmox's own `pvestatd`/status API only
+ever reads `stat-free-memory` (not reclaimable-cache-aware) — the
+correct data was reachable at the hypervisor level the whole four-ticket
+arc, Proxmox's own code just never asks for it.** PX-023's multi-hour
+verification window wasn't long enough to catch the same cache-refill
+drift PX-016 already hit once. This is a genuine upstream Proxmox
+limitation, not fixable from Terraform, Ansible, or the guest — the
+closing move was declaring node-exporter/Grafana the permanent
+authoritative source instead of continuing to chase Proxmox's own
+gauge. PX-023's ballooning change stayed in place regardless: it still
+gives Proxmox a real reclaim mechanism under genuine host memory
+pressure, entirely independent of the display bug.
 
 **The honest part, if asked "what went wrong along the way":** applying
 the Terraform change itself triggered an *implicit reboot* of wk-1/wk-2
@@ -449,12 +464,18 @@ an implicit reboot at `apply` time, so approval needs to happen *before*
 apply, not before a separately-scheduled reboot command.
 
 **Why this is worth telling over a cleaner-sounding bug:** it's honest
-about getting something wrong twice before finding the real cause, and
-about a process slip mid-fix — and shows the discipline of catching both
-via direct verification (`uptime`, real API-based memory readings, real
-data-integrity checks) rather than trusting an early good-looking
-result, which is exactly the mistake that caused PX-016 to close
-prematurely in the first place.
+about getting something wrong *three* times before finding the real
+cause, and about a process slip mid-fix — and shows the discipline of
+catching all of it via direct verification (`uptime`, real API-based
+memory readings, a raw QMP query when the API-based readings still
+didn't add up, real data-integrity checks) rather than trusting an
+early good-looking result. PX-023's own multi-hour verification window
+is the sharpest example: a genuinely more rigorous check than PX-016's,
+and it still wasn't long enough — the honest answer to "how do you know
+you're done" here isn't a fixed verification window, it's "keep
+verifying against the cheapest ground truth available until the two
+sides actually agree," which is what finally landed on the real
+answer.
 
 ---
 
@@ -555,10 +576,15 @@ without disrupting the running workload. **Step 12 (PX-020/021/022) is
 done**: Postgres has a real, tested WAL-G backup/restore story; ingress
 reaches the cluster via a real dedicated LoadBalancer IP (MetalLB) instead
 of a NodePort; Postgres and Redis both run on Longhorn (distributed,
-replicated storage) instead of `local-path`. **Step 13 (PX-023) is
-done**: the Proxmox memory-gauge issue is fully resolved (ballooning
-enabled via Terraform), closing out a three-ticket root-cause chain
-that started back at PX-007. **Step 14 (PX-025) is done**: Alertmanager
+replicated storage) instead of `local-path`. **Step 13 (PX-023/PX-030) is
+done**: ballooning is enabled via Terraform (a real, independently
+useful reclaim mechanism), but the Proxmox memory-gauge display itself
+turned out to be a confirmed permanent upstream limitation — Proxmox's
+own status API never reads the cache-aware stat the guest already
+reports. Node-exporter/Grafana is now the documented, authoritative
+source for this cluster's memory usage, closing out a four-ticket
+root-cause chain that started back at PX-007. **Step 14 (PX-025) is
+done**: Alertmanager
 + Telegram alerting is live, verified via a real triggered failure that
 a human confirmed actually reached his phone. **Step 15 (PX-026/PX-028) is
 done**: Redis, Postgres, Longhorn, and MinIO all export real Prometheus

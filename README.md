@@ -58,7 +58,10 @@ hostnames instead of raw IPs (PX-027), and a hand-authored "project
 services" Grafana dashboard covers all four stateful services with
 real data (PX-028). Two benign monitoring-stack quirks found comparing
 the three live dashboards are documented in `docs/SPEC.md` §13 (PX-029).
-Live progress: `docs/TICKETS.md`.
+A third quirk (PX-030) confirmed Proxmox's own memory gauge is a
+permanent upstream display limitation, not fixable from this repo —
+node-exporter/Grafana is now the documented authoritative source for
+this cluster's memory usage. Live progress: `docs/TICKETS.md`.
 
 ## Setup
 
