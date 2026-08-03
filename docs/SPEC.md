@@ -426,3 +426,47 @@ MinIO (`minio_cluster_usage_object_total`,
 this ticket wanted for backup-storage-growth tracking, confirmed to
 exist rather than assumed). Full verification trail:
 `docs/TICKETS.md` PX-028.
+
+## 13. Known monitoring-stack quirks
+
+Two real, investigated-and-confirmed-benign discrepancies found
+(2026-08-02, PX-029) while comparing the three live Grafana dashboards
+(Node Exporter Full, Kubernetes cluster monitoring, and PX-028's
+project-services dashboard) side by side. Documented here so a future
+session doesn't reopen either as a mystery or "fix" something that
+isn't actually broken.
+
+**Quirk 1 — Node Exporter Full and Kubernetes cluster monitoring
+disagree on CPU/memory for the same nodes; not a PX-027 regression.**
+Node Exporter Full's memory panels use
+`node_memory_MemAvailable_bytes`/`MemTotal_bytes` (the kernel's own
+reclaimable-aware estimate) — cp-1 39.0%, wk-1 29.5%, wk-2 26.0%.
+Kubernetes cluster monitoring's panels use cAdvisor's root cgroup
+`container_memory_working_set_bytes{id="/"}` over `machine_memory_bytes`
+(job `kubernetes-nodes-cadvisor`, a job PX-027 never touched) — cp-1
+48.0%, wk-1 58.4%, wk-2 50.6%, meaningfully higher across the board.
+Root cause: cAdvisor's root-cgroup "working set" accounting doesn't
+exclude reclaimable page cache the way `MemAvailable` does — the same
+class of "total-minus-free trends high on any healthy Linux box"
+measurement gap this project already hit three times for Proxmox's own
+gauge (`docs/TICKETS.md` PX-007/PX-016/PX-023), just on the
+cAdvisor-vs-node-exporter axis instead of Proxmox-vs-guest. Proxmox's
+own PVE UI is a third, separate hypervisor-side measurement, already
+covered by that same three-ticket history.
+
+**Quirk 2 — Node Exporter Full's `Job` dropdown still lists the old
+`kubernetes-service-endpoints` job with node-exporter's pre-PX-027 IPs;
+not currently live.** `node_uname_info{job="kubernetes-service-endpoints"}`
+returns empty on a live instant query, and `/api/v1/targets` confirms
+only `kube-dns`/`kube-state-metrics` are still scraped under that job —
+node-exporter's targets are fully gone from it. The old IPs persist in
+the `Job`/`Host` dropdowns only because Grafana's
+`label_values(metric, label)` variable query scans the entire retained
+index (up to the 7-day retention window), not just currently-live
+series — a frozen, historical label value, not active data. Selecting
+the old job on that dashboard shows a flat line frozen at whatever it
+was right before the PX-027 cutover, not growing data. Self-resolving
+once those blocks age out of retention; no action needed. This is the
+exact nuance PX-027's own ticket text flagged in advance as expected.
+
+Full verification trail: `docs/TICKETS.md` PX-029.

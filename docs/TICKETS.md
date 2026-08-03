@@ -2891,7 +2891,14 @@ needed).
 
 ## PX-029 — Document two monitoring-stack quirks found via the new dashboard
 
-**Status:** OPEN
+**Status:** DONE — closed out 2026-08-04. `docs/SPEC.md` gained a new
+§13 ("Known monitoring-stack quirks"), appended at the end rather than
+inserted mid-document (same reasoning as PX-025's §11: avoids
+renumbering §1-12 and misrepresenting existing cross-references). Both
+findings transcribed from this ticket's own already-verified
+investigation — no new live-cluster checks were needed, this was a
+pure documentation task per its own scope. Diff reviewed before commit:
+`docs/SPEC.md` (new §13 only) and this status flip, nothing else.
 
 **Background:** Found while igalhub compared the three now-live Grafana
 dashboards (Node Exporter Full, Kubernetes cluster monitoring, and
@@ -2945,14 +2952,14 @@ or a new short subsection) is the natural home, cross-referenced from
 this ticket.
 
 **Acceptance criteria:**
-- [ ] `docs/SPEC.md` documents Finding 1 (cAdvisor-vs-node-exporter
+- [x] `docs/SPEC.md` documents Finding 1 (cAdvisor-vs-node-exporter
       memory-accounting gap) with the real numbers, cross-referencing
       the PX-007/PX-016/PX-023 root-cause chain it's structurally the
       same story as
-- [ ] `docs/SPEC.md` documents Finding 2 (stale
+- [x] `docs/SPEC.md` documents Finding 2 (stale
       `kubernetes-service-endpoints` job entries post-PX-027,
       self-resolving via retention)
-- [ ] No code/config changes in this ticket — purely explanatory
+- [x] No code/config changes in this ticket — purely explanatory
 
 ---
 
@@ -2988,4 +2995,4 @@ this ticket.
 | PX-026 | Export real Prometheus metrics for Redis, Postgres, Longhorn, MinIO | DONE |
 | PX-027 | node-exporter's dashboard shows raw IPs instead of hostnames | DONE |
 | PX-028 | Build the "project services" Grafana dashboard | DONE |
-| PX-029 | Document two monitoring-stack quirks found via the new dashboard | OPEN |
+| PX-029 | Document two monitoring-stack quirks found via the new dashboard | DONE |
