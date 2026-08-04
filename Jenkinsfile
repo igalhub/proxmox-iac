@@ -48,10 +48,17 @@ spec:
         stage('Ansible Lint') {
             steps {
                 container('ansible') {
+                    // ANSIBLE_ROLES_PATH: role playbooks nested deep inside a
+                    // role's own directory tree (ansible/roles/*/molecule/
+                    // default/converge.yml, added by PX-034) can't resolve
+                    // `role: common`/`role: k3s-server` via the default
+                    // sibling-dir lookup without this — same fix already
+                    // applied to .github/workflows/ci.yml and the Makefile's
+                    // lint target, never propagated here until PX-038.
                     sh '''
                         pip install --quiet ansible ansible-lint
                         ansible-galaxy collection install -r ansible/requirements.yml
-                        ansible-lint ansible/
+                        ANSIBLE_ROLES_PATH="$(pwd)/ansible/roles" ansible-lint ansible/
                     '''
                 }
             }

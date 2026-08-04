@@ -3659,6 +3659,52 @@ no-bundling rule rather than folded into PX-036's docs-only PR.
 
 ---
 
+## PX-038 — Jenkins `Ansible Lint` stage broken since PX-034 — missing `ANSIBLE_ROLES_PATH`
+
+**Status:** OPEN
+
+**Description:** Found while checking Jenkins for queued/recent builds
+(no code change prompted this — pure opportunistic discovery). The
+in-cluster Jenkins pipeline (`Jenkinsfile`, `proxmox-iac-ci` job) has
+failed on every single build since build #75 (2026-08-04 15:50:08,
+minutes after PX-034 merged) through the current #84 (2026-08-04
+23:15:09) — 10 consecutive failures, confirmed via Jenkins' own REST
+API (`/job/proxmox-iac-ci/api/json?tree=builds[number,timestamp,result]`),
+not assumed from a single run. Build #74 (12:20:07, right after PX-033
+merged) was the last success.
+
+Root cause, confirmed via the actual build #84 console log
+(`/job/proxmox-iac-ci/84/consoleText`): the `Ansible Lint` stage runs
+`ansible-lint ansible/` with no `ANSIBLE_ROLES_PATH` set, so it can't
+resolve `role: common`/`role: k3s-server` referenced from
+`ansible/roles/*/molecule/default/converge.yml` (PX-034) — the exact
+same role-path-resolution gap already fixed in
+`.github/workflows/ci.yml` and the `Makefile`'s `lint` target back when
+PX-034 landed, just never propagated to the `Jenkinsfile`. Real error:
+`syntax-check[specific]: The role 'common' was not found in: ...`
+(3 fatal violations, one per role, `ansible-lint` exit 2, remaining
+pipeline stages — Helm Chart Lint, Build & Push Landing Image — skipped
+as a result). This means every PR merged since PX-034
+(PX-034 itself, PX-035, PX-036, PX-037, and this session's docs syncs)
+has gone into Jenkins as a silent failure nobody was watching for —
+GitHub Actions CI stayed green throughout since it already had the fix.
+
+**Sequencing:** independent bugfix, discovered opportunistically — same
+pattern as PX-037.
+
+**Acceptance criteria:**
+- [ ] `Jenkinsfile`'s `Ansible Lint` stage sets `ANSIBLE_ROLES_PATH`
+      before invoking `ansible-lint`, matching
+      `.github/workflows/ci.yml`/`Makefile`'s existing fix exactly
+- [ ] A real Jenkins build triggered and confirmed `SUCCESS` post-fix
+      (not just "should work") — checked via Jenkins' own REST API,
+      not assumed
+- [ ] Confirm no other Jenkinsfile stage has the same gap (Terraform
+      Validate/Helm Chart Lint/Build & Push stages checked for the same
+      class of environment-setup mismatch against their CI equivalents)
+
+---
+
 ## Ticket status
 
 | Ticket | Title | Status |
@@ -3700,3 +3746,4 @@ no-bundling rule rather than folded into PX-036's docs-only PR.
 | PX-035 | scripts/verify-live-cluster.sh — codify live-cluster verification | DONE |
 | PX-036 | INTERVIEW_WALKTHROUGH.md — write the missing Step 15 (PX-026/PX-028) | DONE |
 | PX-037 | Fix flaky Molecule idempotence: get_url against get.k3s.io reports changed every rerun | DONE |
+| PX-038 | Jenkins Ansible Lint stage broken since PX-034 — missing ANSIBLE_ROLES_PATH | OPEN |
