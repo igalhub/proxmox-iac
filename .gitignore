@@ -50,3 +50,12 @@ __pycache__/
 # genuinely matching "*secrets*" (an actual sealed secret) should stay
 # caught by other, more specific rules if any are ever added.
 !k8s/argocd/apps/sealed-secrets.yaml
+
+# Same class of bug again (PX-033): a personal global gitignore rule
+# ("*.pub" — sensible in general, real SSH public keys shouldn't be
+# committed) was silently excluding this one legitimate, non-sensitive
+# test fixture (not a real key, content is never validated, just read
+# and trimmed by a mocked Terraform test). Explicit per-file override
+# rather than widening the pattern, since a real *.pub file landing
+# here in the future should stay caught.
+!terraform/tests/fixtures/mock-ssh-key.pub

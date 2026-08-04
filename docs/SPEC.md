@@ -510,3 +510,35 @@ committed at `docs/proxmox-bugzilla-memory-gauge-report.md`, filed
 upstream as
 [Bug 7882](https://bugzilla.proxmox.com/show_bug.cgi?id=7882)
 (`pve`/`Qemu`, Proxmox VE 9.2.3, status `NEW`).
+
+## 14. Terraform test coverage (PX-033)
+
+**`terraform/tests/vms.tftest.hcl`** — Terraform's native test framework
+(`terraform test`, available since 1.6, mock-provider support since
+1.7), run with `mock_provider "proxmox" {}` so no real Proxmox
+credentials or network reachability to the host are ever required.
+Confirmed directly, not assumed: the suite passes with
+`terraform/terraform.tfvars` (the file holding the real Proxmox API
+token) removed from disk entirely.
+
+**What this suite actually covers — and, just as importantly, what it
+doesn't.** It asserts on this repo's own `terraform/vms.tf` config
+logic: per-VM sizing (cores/memory/disk) for all three nodes, the
+static-IP-to-VMID structural correlation (`docs/SPEC.md` §4 — VMID's
+last two digits equal the IP's last octet, asserted generically over
+`local.nodes` rather than hardcoded per VM), and PX-023's
+ballooning-floor values (both the exact numbers and the
+cp-1-tighter-than-workers relationship, so a change that keeps the
+numbers "reasonable" but breaks the actual intent still gets caught).
+
+**This is explicitly not a substitute for the real verification every
+prior VM-affecting ticket has done by hand** — `terraform plan`/`apply`
+against the live Proxmox host, followed by real SSH/`kubectl` checks,
+stays the actual proof that a change works (see PX-005, PX-023's own
+extensive real-host verification trail in `docs/TICKETS.md`). Mocked
+tests catch config-logic regressions cheaply and on every PR; they
+cannot catch anything that depends on the real provider's behavior
+against a real API (the `SDN.Use`/`VM.Config.HWType` permission gaps
+PX-004/PX-005 hit, for instance, would never surface here — those were
+real `403`s from the real Proxmox host, not something a mock provider
+can reproduce).
