@@ -1,0 +1,49 @@
+---
+- name: Verify
+  hosts: all
+  become: true
+  tasks:
+    - name: Gather package facts
+      ansible.builtin.package_facts:
+        manager: apt
+
+    - name: Assert baseline packages are installed
+      ansible.builtin.assert:
+        that:
+          - "'curl' in ansible_facts.packages"
+          - "'ca-certificates' in ansible_facts.packages"
+          - "'qemu-guest-agent' in ansible_facts.packages"
+        fail_msg: "one or more baseline packages (curl/ca-certificates/qemu-guest-agent) missing"
+
+    - name: Check deploy user exists
+      ansible.builtin.command: getent passwd deploy
+      register: common_deploy_user_check
+      changed_when: false
+
+    - name: Assert deploy user is in the sudo group
+      ansible.builtin.command: id -nG deploy
+      register: common_deploy_groups
+      changed_when: false
+      failed_when: "'sudo' not in common_deploy_groups.stdout"
+
+    - name: Assert sudoers file grants passwordless sudo
+      ansible.builtin.command: cat /etc/sudoers.d/deploy
+      register: common_sudoers_content
+      changed_when: false
+      failed_when: "'deploy ALL=(ALL) NOPASSWD:ALL' not in common_sudoers_content.stdout"
+
+    - name: Assert deploy user's authorized_keys contains the test fixture key
+      ansible.builtin.command: cat /home/deploy/.ssh/authorized_keys
+      register: common_authorized_keys_content
+      changed_when: false
+      failed_when: "'mock@molecule-test' not in common_authorized_keys_content.stdout"
+
+    - name: Assert SSH password authentication is disabled
+      ansible.builtin.command: grep -E '^PasswordAuthentication no' /etc/ssh/sshd_config
+      register: common_password_auth_check
+      changed_when: false
+
+    - name: Assert SSH root login is disabled
+      ansible.builtin.command: grep -E '^PermitRootLogin no' /etc/ssh/sshd_config
+      register: common_root_login_check
+      changed_when: false

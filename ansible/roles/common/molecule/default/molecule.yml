@@ -1,0 +1,27 @@
+# Docker driver, but a systemd-capable image/config — the common role
+# does real systemd work (qemu-guest-agent service, sshd restart via a
+# handler) that a plain Docker image with no init system can't exercise
+# at all. geerlingguy's images are purpose-built for exactly this
+# (systemd as PID 1 under Docker), the standard choice for Ansible role
+# testing that touches services.
+dependency:
+  name: galaxy
+  options:
+    requirements-file: ../../../../requirements.yml
+driver:
+  name: docker
+platforms:
+  - name: common-ubuntu2204
+    image: geerlingguy/docker-ubuntu2204-ansible:latest
+    command: /lib/systemd/systemd
+    privileged: true
+    cgroupns_mode: host
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+provisioner:
+  name: ansible
+  playbooks:
+    converge: converge.yml
+    verify: verify.yml
+verifier:
+  name: ansible

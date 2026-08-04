@@ -1,0 +1,13 @@
+---
+- name: Converge
+  hosts: all
+  become: true
+  vars:
+    # common_deploy_user_ssh_public_key defaults to a path under $HOME
+    # that only exists on the machine that owns this project's real SSH
+    # key (see docs/TICKETS.md PX-034) — same class of gap PX-033 hit
+    # with Terraform's file(). Overridden here to a checked-in,
+    # non-sensitive fixture instead.
+    common_deploy_user_ssh_public_key: "{{ playbook_dir }}/files/mock-ssh-key.pub"
+  roles:
+    - role: common

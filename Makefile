@@ -5,7 +5,7 @@ lint:
 	[ -f hooks/pre-commit ] && files="$$files hooks/pre-commit"; \
 	if [ -z "$$files" ]; then echo "No shell scripts found"; else shellcheck $$files; fi
 	@if [ -d terraform ]; then terraform -chdir=terraform fmt -check -recursive && terraform -chdir=terraform validate; fi
-	@if [ -d ansible ]; then ansible-lint ansible/; fi
+	@if [ -d ansible ]; then ANSIBLE_ROLES_PATH="$$(pwd)/ansible/roles" ansible-lint ansible/; fi
 
 test:
 	@if [ -d landing/tests ] && ls landing/tests/*.py >/dev/null 2>&1; then \
