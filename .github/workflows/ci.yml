@@ -207,7 +207,9 @@ jobs:
 
       - name: Install Ansible collection dependencies
         if: steps.check.outputs.present == 'true'
-        run: ansible-galaxy collection install -r ansible/requirements.yml community.docker
+        run: |
+          ansible-galaxy collection install -r ansible/requirements.yml
+          ansible-galaxy collection install community.docker
 
       - name: molecule test (common role)
         if: steps.check.outputs.present == 'true'
