@@ -540,6 +540,78 @@ right."
 
 ---
 
+## Step 15 — Real Prometheus metrics for the stateful services, and a dashboard to show them (PX-026/PX-028, done)
+
+**What it is:** the two dashboards from Step 8 (Node Exporter Full,
+Kubernetes cluster monitoring) only ever covered node- and pod-level
+health — nothing about Redis, Postgres, Longhorn, or MinIO, the actual
+stateful services this project is built around. Checked directly in
+Grafana's Explore metric browser before writing anything (not assumed):
+searching `redis`, `postgres`, `longhorn`, and `minio` returned nothing
+for all four. PX-026 turned each one on and proved real data flows;
+PX-028 built the dashboard PX-026 deliberately deferred out of its own
+scope, once there was real data worth putting in front of a human.
+
+**Four different mechanisms, not one uniform toggle — the more
+interesting engineering story than "flip a flag":**
+- **Redis** — Bitnami chart's `metrics.enabled` flag turns on a
+  `redis_exporter` sidecar.
+- **Postgres** — the Zalando operator's own exporter-sidecar mechanism,
+  confirmed against its real docs/CRD schema rather than assumed from
+  memory.
+- **Longhorn** and **MinIO** — both already expose a native `/metrics`
+  endpoint on their own pods; only needed adding as scrape targets, no
+  chart config change.
+
+**Two real corrections found during implementation, not assumed either
+way:** MinIO's metrics endpoint turned out to need *no* auth wiring at
+all — the chart's `metrics.serviceMonitor.public` already defaulted to
+`true`, confirmed via the chart's own template and the live pod's env
+(`MINIO_PROMETHEUS_AUTH_TYPE=public` was already set before this ticket
+touched anything). And Longhorn has no single `robustness` gauge, which
+this ticket originally assumed existed — the real per-volume metric is
+`longhorn_replica_state` (per-replica, e.g. `state="running"`),
+confirmed against live data instead of a guessed name.
+
+**The verification standard both tickets held to is the sharper story
+here, if asked "how do you know a metrics integration actually works":**
+not "the target shows `up`" — a target being `up` is necessary but not
+sufficient. Every one of the four services was confirmed with a real
+query against real data (Redis's `redis_connected_clients`, Postgres's
+`pg_stat_database_numbackends`, Longhorn's per-volume
+`longhorn_replica_state`, MinIO's `minio_cluster_usage_object_total`/
+`minio_cluster_bucket_total` matching the actual live WAL-G backup
+bucket). PX-028's own dashboard verification went one step further
+still: rather than stopping at "the dashboard renders in the browser,"
+every one of its 8 panels' real Prometheus expressions was queried
+through Grafana's own datasource-proxy path — the exact path Grafana's
+frontend itself uses to render a panel, not a side-channel Explore
+query — confirming each returned real, non-empty series.
+
+**PX-026's close-out is also a clean answer to "how do you verify a
+merge didn't just look right in review":** rather than trusting the
+implementation PR's own pre-merge checks, QA re-verified fresh against
+`master` post-merge — real `lastScrape` ages from Prometheus's
+`/targets` API (not an instant query's always-"now" eval timestamp) to
+prove ongoing live scrapes rather than stale frozen samples, the
+Postgres pod's stability and same-PVC identity after its one real
+sidecar-triggered restart, all three touched ArgoCD Applications
+re-synced against the real merged commit, and both Prometheus's and
+Alertmanager's alert APIs confirmed empty throughout — proving the
+live change caused zero alerting regressions, not just zero visible
+errors.
+
+**Why this is worth telling over "we added some metrics":** both
+tickets are full examples of this project's core discipline — confirm
+the real mechanism before writing config, verify with a live query
+instead of trusting a green target, and re-verify independently after
+merge rather than trusting the branch's own report. Two real corrections
+(MinIO's auth, Longhorn's metric name) came directly out of checking
+instead of assuming, on a change that would otherwise have looked
+identical either way.
+
+---
+
 ## Step 16 — Automated test suite: pytest, kubeconform, terraform test, Ansible Molecule (PX-031-034, done)
 
 **What it is:** every check up to this point ran against the live

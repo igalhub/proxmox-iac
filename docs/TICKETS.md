@@ -3596,6 +3596,18 @@ on anything else in the PX-031-035 sequence.
       coherent change, consistent with this ticket's own scope note
       about not bundling unrelated content
 
+**Findings:** `## Step 15 — Real Prometheus metrics for the stateful
+services, and a dashboard to show them (PX-026/PX-028, done)` added to
+`docs/INTERVIEW_WALKTHROUGH.md`, inserted between `## Step 14` and
+`## Step 16`. Content sourced from PX-026/PX-028's own write-ups above
+(their four different per-service export mechanisms, the two real
+corrections found during implementation — MinIO needing no auth wiring,
+Longhorn's real metric name — and both tickets' verification standards,
+including PX-026's independent post-merge QA re-verification). "Where
+things stand"'s existing Step 15 mention was checked and left as-is —
+still accurate now that the real section exists above it, nothing to
+adjust. No other section touched or renumbered.
+
 ---
 
 ## Ticket status
