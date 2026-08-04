@@ -13,7 +13,7 @@ test:
 	else \
 		echo "No landing/ test suite found"; \
 	fi
-	@echo "Terraform/Ansible/K8s verification is still terraform plan / ansible-lint / manual cluster checks (see docs/TICKETS.md QA steps per ticket) — PX-032/033/034/035 track automating those."
+	@echo "Terraform/K8s/Ansible automation lives in CI, not this target: terraform test (PX-033), kubeconform (PX-032), and Molecule (PX-034) all run there. scripts/verify-live-cluster.sh (PX-035) codifies the one live-cluster check that can't run in CI, invoked by hand as part of a ticket's close-out."
 
 install-hooks:
 	@mkdir -p .git/hooks
