@@ -203,7 +203,7 @@ jobs:
 
       - name: Install Molecule + Ansible
         if: steps.check.outputs.present == 'true'
-        run: pip install ansible-core "molecule[docker]" molecule-plugins
+        run: pip install ansible-core molecule "molecule-plugins[docker]"
 
       - name: Install Ansible collection dependencies
         if: steps.check.outputs.present == 'true'
