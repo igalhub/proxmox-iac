@@ -3661,7 +3661,7 @@ no-bundling rule rather than folded into PX-036's docs-only PR.
 
 ## PX-038 — Jenkins `Ansible Lint` stage broken since PX-034 — missing `ANSIBLE_ROLES_PATH`
 
-**Status:** OPEN
+**Status:** DONE
 
 **Description:** Found while checking Jenkins for queued/recent builds
 (no code change prompted this — pure opportunistic discovery). The
@@ -3693,13 +3693,13 @@ GitHub Actions CI stayed green throughout since it already had the fix.
 pattern as PX-037.
 
 **Acceptance criteria:**
-- [ ] `Jenkinsfile`'s `Ansible Lint` stage sets `ANSIBLE_ROLES_PATH`
+- [x] `Jenkinsfile`'s `Ansible Lint` stage sets `ANSIBLE_ROLES_PATH`
       before invoking `ansible-lint`, matching
       `.github/workflows/ci.yml`/`Makefile`'s existing fix exactly
-- [ ] A real Jenkins build triggered and confirmed `SUCCESS` post-fix
+- [x] A real Jenkins build triggered and confirmed `SUCCESS` post-fix
       (not just "should work") — checked via Jenkins' own REST API,
       not assumed
-- [ ] Confirm no other Jenkinsfile stage has the same gap (Terraform
+- [x] Confirm no other Jenkinsfile stage has the same gap (Terraform
       Validate/Helm Chart Lint/Build & Push stages checked for the same
       class of environment-setup mismatch against their CI equivalents)
 
@@ -3761,4 +3761,4 @@ or share this class of gap.
 | PX-035 | scripts/verify-live-cluster.sh — codify live-cluster verification | DONE |
 | PX-036 | INTERVIEW_WALKTHROUGH.md — write the missing Step 15 (PX-026/PX-028) | DONE |
 | PX-037 | Fix flaky Molecule idempotence: get_url against get.k3s.io reports changed every rerun | DONE |
-| PX-038 | Jenkins Ansible Lint stage broken since PX-034 — missing ANSIBLE_ROLES_PATH | OPEN |
+| PX-038 | Jenkins Ansible Lint stage broken since PX-034 — missing ANSIBLE_ROLES_PATH | DONE |
