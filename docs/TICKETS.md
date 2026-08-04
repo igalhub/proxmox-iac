@@ -3423,10 +3423,35 @@ be the messiest.
   throughout, `molecule-k3s-server` job green
   (run [30904714597](https://github.com/igalhub/proxmox-iac/actions/runs/30904714597)).
   CI job kept.
-- **`k3s-agent` — not yet attempted.** Next up; its outcome is being
-  tested independently rather than inferred from k3s-server's pre-fix
-  failure, since the same nested-overlayfs fix may or may not be needed
-  there too.
+- **`k3s-agent` — in progress, real fix identified and applied,
+  awaiting CI confirmation.** Genuine join test required a two-instance
+  scenario at `ansible/roles/k3s-agent/molecule/default/` — one
+  container running `k3s-server`, one running `k3s-agent` joining it —
+  since the real task depends on a live control-plane's token/URL via
+  `hostvars`. Also required a new `k3s_agent_control_plane_host` role
+  variable (same rationale as `k3s_server_extra_install_args`: defaults
+  to the exact expression previously hardcoded, so real installs are
+  byte-for-byte unchanged; only Molecule's `converge.yml` overrides it,
+  since Molecule's Docker connection doesn't set `ansible_host` to a
+  routable container address), and the same async/poll(5m)+rescue bound
+  added to `ansible/roles/k3s-agent/tasks/main.yml`'s install task
+  (same `TimeoutStartSec=0` risk as k3s-server's).
+
+  First run (agent side left at its default, tested independently
+  rather than assumed from k3s-server's pre-fix result) hit the bounded
+  5-minute timeout. The rescue block's captured `journalctl` showed the
+  real cause: the agent's own containerd instance (separate from the
+  server's) hit the identical error —
+  `"overlayfs" snapshotter cannot be enabled for
+  "/var/lib/rancher/k3s/agent/containerd" ... failed to mount overlay
+  ... err: invalid argument` — same nested-overlayfs limitation as
+  k3s-server, on a different containerd process
+  (run [30907365981](https://github.com/igalhub/proxmox-iac/actions/runs/30907365981)).
+  Fixed the same confirmed way: `--snapshotter=native` via
+  `k3s_agent_extra_install_args` (new variable, empty default on real
+  targets, same pattern as the server-side fix), set only in the
+  Molecule scenario. Rerun in progress
+  (commit `d423575`) — result to be recorded here once known.
 
 ---
 
