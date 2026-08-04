@@ -3263,7 +3263,28 @@ natural next step before moving to the two on-thesis skill gaps
 
 ## PX-033 — Terraform native `terraform test`
 
-**Status:** OPEN
+**Status:** DONE — closed out 2026-08-04.
+`terraform/tests/vms.tftest.hcl` (6 `run` blocks, 21 assertions) covers
+per-VM sizing/network for cp-1/wk-1/wk-2, the VMID-to-IP-octet
+structural correlation (asserted generically over `local.nodes`, not
+hardcoded per VM), PX-023's ballooning-floor values (both exact numbers
+and the cp-1-tighter-than-workers relationship), and both root outputs
+(`vm_ips`/`vm_ids`). `mock_provider "proxmox" {}` throughout — no real
+Proxmox credentials or host reachability required, confirmed directly
+(not assumed) by running the suite with `terraform/terraform.tfvars`
+removed from disk entirely. New `terraform-test` CI job added, guarded
+the same way the existing `terraform` job is. `docs/SPEC.md` gained a
+new §14 documenting scope and — just as important — what this suite
+explicitly does *not* replace (real `plan`/`apply` verification against
+the live host).
+
+**Mutation-tested before writing the real suite:** while discovering
+the correct nested-block attribute-access syntax
+(`.memory[0].floating`, not `.memory.floating`), deliberately set an
+assertion to a wrong value and confirmed `terraform test` failed with a
+clear diff, not a false pass — proved the schema-discovery pattern
+actually reads real config values through the mock, not random mock
+noise, before building the full suite on top of it.
 
 **Description:** HCL-native `.tftest.hcl` files under
 `terraform/tests/`, using Terraform's built-in mock-provider support
@@ -3281,14 +3302,14 @@ lower-friction static-check tickets establish the CI pattern, before
 the higher-friction Ansible ticket.
 
 **Acceptance criteria:**
-- [ ] `terraform/tests/*.tftest.hcl` covers per-VM sizing, static
+- [x] `terraform/tests/*.tftest.hcl` covers per-VM sizing, static
       IP/VMID correlation, and the PX-023 ballooning-floor values,
       using mocked providers only
-- [ ] `terraform test` runs fully offline — confirmed via a clean run
+- [x] `terraform test` runs fully offline — confirmed via a clean run
       with no Proxmox credentials/network access available
-- [ ] New CI job added (guarded the same way the existing `terraform`
+- [x] New CI job added (guarded the same way the existing `terraform`
       job is), passing on a real PR
-- [ ] `docs/SPEC.md` §10 (Terraform state management) or a new
+- [x] `docs/SPEC.md` §10 (Terraform state management) or a new
       subsection notes this is a mocked/offline suite, explicitly not
       a substitute for the real `terraform plan`/`apply` verification
       every prior VM-affecting ticket has done by hand
@@ -3417,6 +3438,6 @@ blocked by PX-032/PX-033/PX-034.
 | PX-030 | Correct PX-007/016/023: Proxmox memory gauge is a permanent upstream limitation | DONE |
 | PX-031 | pytest suite for landing/'s Prometheus-query logic | DONE |
 | PX-032 | K8s manifest / Helm-values validation via kubeconform | DONE |
-| PX-033 | Terraform native `terraform test` | OPEN |
+| PX-033 | Terraform native `terraform test` | DONE |
 | PX-034 | Ansible Molecule tests for common/k3s-server/k3s-agent | OPEN |
 | PX-035 | scripts/verify-live-cluster.sh — codify live-cluster verification | OPEN |
