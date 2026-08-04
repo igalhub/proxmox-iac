@@ -25,11 +25,11 @@ that runs inside the cluster. See `docs/PRD.md` (why) and `docs/SPEC.md`
 
 ```
 docs/         # PRD.md, SPEC.md (living doc), TICKETS.md
-terraform/    # VM provisioning (Phase 1)
-ansible/      # VM bootstrap + k3s install (Phase 2)
+terraform/    # VM provisioning (Phase 1); tests/ = terraform test coverage (PX-033)
+ansible/      # VM bootstrap + k3s install (Phase 2); roles/*/molecule/ = Molecule test scenarios (PX-034)
 k8s/          # Helm values / manifests / ArgoCD app defs (Phase 3+)
-landing/      # Landing page app (FastAPI, live Prometheus metrics)
-scripts/      # one-off host scripts (e.g. cloud-init template build)
+landing/      # Landing page app (FastAPI, live Prometheus metrics); tests/ = pytest suite (PX-031)
+scripts/      # host scripts (cloud-init template build) plus CI-wired manifest/Helm-values validation (PX-032: validate-manifests.sh, helm-lint-values.sh, lib/, crd-schemas/)
 hooks/        # tracked pre-commit hook source (installed via `make install-hooks`)
 .github/      # CI workflows
 .claude/      # Claude Code adapter scripts (dev-check.sh)

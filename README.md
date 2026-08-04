@@ -26,11 +26,11 @@ see `docs/PRD.md` for the full why.
 
 ```
 docs/         # PRD.md (why), SPEC.md (architecture, living doc), TICKETS.md
-terraform/    # VM provisioning (Phase 1)
-ansible/      # VM bootstrap + k3s install (Phase 2)
+terraform/    # VM provisioning (Phase 1); tests/ = terraform test coverage (PX-033)
+ansible/      # VM bootstrap + k3s install (Phase 2); roles/*/molecule/ = Molecule test scenarios (PX-034)
 k8s/          # Helm values / manifests / ArgoCD app defs (Phase 3+)
-landing/      # Landing page app (FastAPI, live Prometheus metrics)
-scripts/      # one-off host scripts (e.g. cloud-init template build)
+landing/      # Landing page app (FastAPI, live Prometheus metrics); tests/ = pytest suite (PX-031)
+scripts/      # host scripts (cloud-init template build) plus CI-wired manifest/Helm-values validation (PX-032)
 hooks/        # tracked pre-commit hook source
 .github/      # CI workflows
 .claude/      # Claude Code adapter scripts (dev-check.sh)
@@ -61,7 +61,12 @@ the three live dashboards are documented in `docs/SPEC.md` §13 (PX-029).
 A third quirk (PX-030) confirmed Proxmox's own memory gauge is a
 permanent upstream display limitation, not fixable from this repo —
 node-exporter/Grafana is now the documented authoritative source for
-this cluster's memory usage. Live progress: `docs/TICKETS.md`.
+this cluster's memory usage. An automated test suite (PX-031-034) now
+covers `landing/` (pytest), K8s/Helm manifests (kubeconform), Terraform
+(native `terraform test`), and all three Ansible roles (Molecule,
+running each role for real in a disposable container) — see the CI
+section below and `docs/SPEC.md` §14-15. Live progress:
+`docs/TICKETS.md`.
 
 ## Setup
 
@@ -96,10 +101,16 @@ reachability, whether a k3s cluster is currently reachable) — used by the
 
 ## CI
 
-GitHub Actions runs shellcheck, `terraform fmt`/`validate`, `ansible-lint`,
-and `ruff` (on `landing/`) on every push/PR to `master`. Each of the
-latter three is guarded to no-op cleanly if its directory doesn't exist
-yet — activates automatically, no CI edit needed when a new phase lands.
+GitHub Actions runs on every push/PR to `master`: shellcheck,
+`terraform fmt`/`validate`, `ansible-lint`, `ruff` (on `landing/`),
+`pytest` (`landing/`'s Prometheus-query logic, PX-031), `kubeconform`
+(Helm-templated + plain K8s manifests, PX-032), `terraform test`
+(PX-033), and three Molecule jobs — `molecule-common`,
+`molecule-k3s-server`, `molecule-k3s-agent` (PX-034) — that actually run
+each Ansible role in a disposable Docker container and assert on
+outcome. Each job is guarded to no-op cleanly if its directory/scenario
+doesn't exist yet — activates automatically, no CI edit needed when a
+new phase lands.
 
 ## License
 
