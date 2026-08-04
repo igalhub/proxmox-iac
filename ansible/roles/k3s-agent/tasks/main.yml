@@ -1,9 +1,14 @@
 ---
+# See ansible/roles/k3s-server/tasks/main.yml's identical task for why
+# this is changed_when: false (PX-037) — get_url's change-detection
+# against get.k3s.io's dynamically served script isn't reliable, and
+# the real idempotency signal lives one task downstream regardless.
 - name: Download k3s install script
   ansible.builtin.get_url:
     url: https://get.k3s.io
     dest: /tmp/k3s-install.sh
     mode: "0755"
+  changed_when: false
 
 # K3S_URL/K3S_TOKEN come from the control-plane host's facts, set by the
 # k3s-server role earlier in the same playbook run (see site.yml play
