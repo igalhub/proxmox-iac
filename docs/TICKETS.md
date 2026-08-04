@@ -3346,7 +3346,7 @@ the higher-friction Ansible ticket.
 
 ## PX-034 — Ansible Molecule tests for `common`/`k3s-server`/`k3s-agent`
 
-**Status:** OPEN
+**Status:** DONE
 
 **Description:** Molecule-driven tests (Docker/Podman-backed
 disposable containers) for the three roles, going beyond
@@ -3373,16 +3373,16 @@ skill gap (Ansible), sequenced last on purpose since it's expected to
 be the messiest.
 
 **Acceptance criteria:**
-- [ ] Molecule scenario(s) added for at least the `common` role,
+- [x] Molecule scenario(s) added for at least the `common` role,
       running fully offline (no real Proxmox VMs)
-- [ ] k3s-server/k3s-agent attempted; outcome documented honestly
+- [x] k3s-server/k3s-agent attempted; outcome documented honestly
       either way — full coverage, partial coverage with a named
       reason, or "not practical in a container, here's why" are all
       acceptable closes for this ticket
-- [ ] Any systemd/container-model limitations hit are written up in
+- [x] Any systemd/container-model limitations hit are written up in
       `docs/TICKETS.md` and, if architecturally relevant,
       `docs/SPEC.md` — not silently worked around
-- [ ] CI job added only for whatever portion actually runs cleanly and
+- [x] CI job added only for whatever portion actually runs cleanly and
       fast enough for CI; anything left manual is stated as such, not
       left ambiguous
 
@@ -3569,5 +3569,5 @@ blocked by PX-032/PX-033/PX-034.
 | PX-031 | pytest suite for landing/'s Prometheus-query logic | DONE |
 | PX-032 | K8s manifest / Helm-values validation via kubeconform | DONE |
 | PX-033 | Terraform native `terraform test` | DONE |
-| PX-034 | Ansible Molecule tests for common/k3s-server/k3s-agent | OPEN |
+| PX-034 | Ansible Molecule tests for common/k3s-server/k3s-agent | DONE |
 | PX-035 | scripts/verify-live-cluster.sh — codify live-cluster verification | OPEN |
