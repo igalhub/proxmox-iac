@@ -3,10 +3,6 @@
   hosts: all
   become: true
   vars:
-    # ansible_host is unset for Molecule's Docker connection (it targets
-    # the container directly, not an IP) - the role's kubeconfig-rewrite
-    # task templates it, so it needs a harmless placeholder value here.
-    ansible_host: "127.0.0.1"
     # Redirected away from the real project's terraform/../.kubeconfig
     # default so this test never touches repo-tracked paths.
     k3s_kubeconfig_local_path: /tmp/molecule-k3s-server-kubeconfig

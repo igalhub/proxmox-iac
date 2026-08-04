@@ -48,6 +48,13 @@
     dest: "{{ k3s_kubeconfig_local_path }}"
     flat: true
 
+# molecule-notest: rewrites the fetched kubeconfig for real external
+# access via this host's real ansible_host. Molecule's Docker connection
+# doesn't set ansible_host the way a real SSH-connected inventory host
+# does (see docs/TICKETS.md PX-034 — overriding it at the play level to
+# work around this broke Molecule's own connection instead), and a
+# real-network kubeconfig address isn't something this scenario needs
+# to verify anyway.
 - name: Point local kubeconfig at the control-plane's real IP, not 127.0.0.1
   become: false
   delegate_to: localhost
@@ -55,3 +62,4 @@
     path: "{{ k3s_kubeconfig_local_path }}"
     regexp: 'https://127\.0\.0\.1:6443'
     replace: "https://{{ ansible_host }}:6443"
+  tags: [molecule-notest]
