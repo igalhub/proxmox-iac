@@ -1,1 +1,19 @@
 ---
+# Defaults to the same ansible_host used to reach real inventory hosts —
+# identical value to what was previously hardcoded inline, so real
+# installs are unaffected. PX-034's Molecule scenario overrides this
+# because Molecule's Docker connection doesn't set ansible_host to a
+# routable container address the way a real SSH-connected inventory
+# host does (see docs/TICKETS.md PX-034 and
+# ansible/roles/k3s-server/tasks/main.yml's kubeconfig-rewrite task for
+# the same gap hit there).
+k3s_agent_control_plane_host: "{{ hostvars[groups['k3s_control_plane'][0]]['ansible_host'] }}"
+
+# Empty on real targets — see
+# ansible/roles/k3s-server/defaults/main.yml for the identical
+# nested-overlayfs rationale (container-only, k3s-io/k3s#3266,
+# containerd/containerd#5464). Only set to "--snapshotter=native" in
+# PX-034's Molecule scenario if the agent install actually hits the
+# same failure the server did — tested independently, not assumed from
+# the server's result.
+k3s_agent_extra_install_args: ""

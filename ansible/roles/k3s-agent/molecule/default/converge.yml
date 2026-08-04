@@ -1,0 +1,37 @@
+---
+- name: Converge control-plane
+  hosts: k3s_control_plane
+  become: true
+  vars:
+    # Redirected away from the real project's terraform/../.kubeconfig
+    # default so this test never touches repo-tracked paths.
+    k3s_kubeconfig_local_path: /tmp/molecule-k3s-agent-kubeconfig
+    # See ansible/roles/k3s-server/defaults/main.yml — same
+    # nested-overlayfs fix PX-034's k3s-server scenario needed, for the
+    # same reason (this container's own rootfs is already
+    # overlay2-backed).
+    k3s_server_extra_install_args: "--snapshotter=native"
+  roles:
+    - role: k3s-server
+  tasks:
+    # Molecule's Docker connection doesn't set ansible_host to a
+    # routable container address (see docs/TICKETS.md PX-034), so the
+    # worker can't reach this host the way k3s-agent's role normally
+    # expects (hostvars[...]['ansible_host']). Captured here instead,
+    # via the same cross-play hostvars mechanism already used for
+    # k3s_node_token.
+    - name: Capture this container's real network address for the worker to join
+      ansible.builtin.set_fact:
+        molecule_k3s_control_plane_address: "{{ ansible_default_ipv4.address }}"
+
+- name: Converge worker
+  hosts: k3s_workers
+  become: true
+  vars:
+    k3s_agent_control_plane_host: "{{ hostvars[groups['k3s_control_plane'][0]]['molecule_k3s_control_plane_address'] }}"
+    # Deliberately left at its empty default for the first run — tested
+    # independently of k3s-server's pre-fix failure, not assumed. Only
+    # add "--snapshotter=native" here if the agent install actually
+    # hits the same nested-overlayfs error the server did.
+  roles:
+    - role: k3s-agent

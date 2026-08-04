@@ -8,11 +8,40 @@
 # K3S_URL/K3S_TOKEN come from the control-plane host's facts, set by the
 # k3s-server role earlier in the same playbook run (see site.yml play
 # order — k3s-server always runs before k3s-agent).
+#
+# Bounded via async/poll (5m) rather than left to run indefinitely —
+# same TimeoutStartSec=0 risk documented for k3s-server's install task
+# (see ansible/roles/k3s-server/tasks/main.yml), and a real risk here
+# too since k3s-agent ships the same systemd unit behavior.
 - name: Install k3s agent (worker) and join the cluster
-  ansible.builtin.command: /tmp/k3s-install.sh
-  args:
-    creates: /usr/local/bin/k3s-agent
-  environment:
-    INSTALL_K3S_EXEC: "agent"
-    K3S_URL: "https://{{ hostvars[groups['k3s_control_plane'][0]]['ansible_host'] }}:6443"
-    K3S_TOKEN: "{{ hostvars[groups['k3s_control_plane'][0]]['k3s_node_token'] }}"
+  block:
+    - name: Run the k3s install script
+      ansible.builtin.command: /tmp/k3s-install.sh
+      args:
+        creates: /usr/local/bin/k3s-agent
+      environment:
+        INSTALL_K3S_EXEC: "agent {{ k3s_agent_extra_install_args }}"
+        K3S_URL: "https://{{ k3s_agent_control_plane_host }}:6443"
+        K3S_TOKEN: "{{ hostvars[groups['k3s_control_plane'][0]]['k3s_node_token'] }}"
+      async: 300
+      poll: 15
+  rescue:
+    - name: Capture k3s-agent service status for diagnostics
+      ansible.builtin.command: systemctl status k3s-agent --no-pager
+      register: k3s_agent_status_debug
+      failed_when: false
+      changed_when: false
+
+    - name: Capture k3s-agent journal for diagnostics
+      ansible.builtin.command: journalctl -u k3s-agent --no-pager -n 100
+      register: k3s_agent_journal_debug
+      failed_when: false
+      changed_when: false
+
+    - name: Show diagnostics
+      ansible.builtin.debug:
+        msg: "{{ (k3s_agent_status_debug.stdout_lines | default([])) + ['---'] + (k3s_agent_journal_debug.stdout_lines | default([])) }}"
+
+    - name: Re-raise the original failure
+      ansible.builtin.fail:
+        msg: "k3s-agent install did not complete within the bounded async window - see diagnostics above"
