@@ -29,9 +29,11 @@
   become: true
   vars:
     k3s_agent_control_plane_host: "{{ hostvars[groups['k3s_control_plane'][0]]['molecule_k3s_control_plane_address'] }}"
-    # Deliberately left at its empty default for the first run — tested
-    # independently of k3s-server's pre-fix failure, not assumed. Only
-    # add "--snapshotter=native" here if the agent install actually
-    # hits the same nested-overlayfs error the server did.
+    # Confirmed needed, not assumed: the first run (without this) hit
+    # the identical nested-overlayfs error on the agent's own
+    # containerd — "overlayfs" snapshotter cannot be enabled for
+    # ".../agent/containerd" — same root cause as k3s-server's, just on
+    # a separate containerd instance. See docs/TICKETS.md PX-034.
+    k3s_agent_extra_install_args: "--snapshotter=native"
   roles:
     - role: k3s-agent
