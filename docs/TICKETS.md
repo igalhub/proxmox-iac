@@ -3530,6 +3530,30 @@ blocked by PX-032/PX-033/PX-034.
 - [ ] `docs/SPEC.md` and/or `k8s/README.md` note this script as the
       standard close-out verification step going forward
 
+**Findings:** `scripts/verify-live-cluster.sh` written and run for real
+against the live cluster — all checks passed
+(3/3 nodes `Ready`, 17/17 ArgoCD Applications `Synced`/`Healthy`, all 4
+ingress paths `200`, 0 Prometheus targets down). shellcheck clean (one
+`SC2317` info-level false positive on the trap-invoked cleanup function,
+suppressed with an inline `disable` comment and explanation). Mutation
+tested: temporarily pointed the Grafana check at a nonexistent path,
+confirmed the script reported a clear `FAIL` and exited non-zero,
+reverted, confirmed clean again.
+
+One real bug caught by actually running it, not by review: the initial
+version checked `/` on every service for a bare `200`. Grafana
+legitimately redirects unauthenticated `/` to `/login` (`302`) and
+Jenkins legitimately denies anonymous read on `/` (`403`, confirmed via
+its own `X-Jenkins`/`X-Required-Permission` headers as the real app
+correctly enforcing its security config, not a broken path) — both
+would have failed on every single run against a fully healthy cluster.
+Fixed by checking a genuinely unauthenticated-200 endpoint per service
+instead (Grafana's `/api/health`, Jenkins' `/login`), confirmed for real
+before and after the fix. Full write-up in `docs/SPEC.md` §16.
+
+Not yet done: `k8s/README.md` mention (skipped — `docs/SPEC.md` §16
+satisfies the "and/or" acceptance criterion; can add if wanted).
+
 ---
 
 ## PX-036 — `docs/INTERVIEW_WALKTHROUGH.md`: write the missing Step 15 (PX-026/PX-028)
