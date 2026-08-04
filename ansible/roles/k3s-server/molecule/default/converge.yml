@@ -6,5 +6,8 @@
     # Redirected away from the real project's terraform/../.kubeconfig
     # default so this test never touches repo-tracked paths.
     k3s_kubeconfig_local_path: /tmp/molecule-k3s-server-kubeconfig
+    # See ansible/roles/k3s-server/defaults/main.yml for why this is
+    # only set here, never as the role's own permanent default.
+    k3s_server_extra_install_args: "--snapshotter=native"
   roles:
     - role: k3s-server

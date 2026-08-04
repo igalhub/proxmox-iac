@@ -30,6 +30,7 @@
         INSTALL_K3S_EXEC: >-
           server --disable=traefik --write-kubeconfig-mode=644
           --node-taint node-role.kubernetes.io/control-plane=true:NoSchedule
+          {{ k3s_server_extra_install_args }}
       async: 300
       poll: 15
   rescue:
