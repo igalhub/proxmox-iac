@@ -3107,9 +3107,14 @@ at `docs/proxmox-bugzilla-memory-gauge-report.md` (real per-node
 percentage gaps, exact QMP field names/values, QEMU/guest kernel
 versions, and reproduction steps — all sourced from this ticket's own
 verified investigation, nothing new claimed). Linked from
-`docs/SPEC.md` §13's quirk 3 entry. **Not yet submitted to
-bugzilla.proxmox.com as of this writing — placeholder: once igalhub
-actually files it, replace this note with the real bug ID/URL.**
+`docs/SPEC.md` §13's quirk 3 entry.
+
+**Filed upstream (2026-08-04):**
+[Bug 7882](https://bugzilla.proxmox.com/show_bug.cgi?id=7882) —
+`pve` product, `Qemu` component, Proxmox VE 9.2.3, status `NEW` as of
+filing. No response from Proxmox yet; this ticket stays closed
+regardless (the investigation and repo-side documentation are complete
+independent of upstream's response time or resolution).
 
 ---
 
