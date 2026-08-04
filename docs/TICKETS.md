@@ -3532,6 +3532,48 @@ blocked by PX-032/PX-033/PX-034.
 
 ---
 
+## PX-036 — `docs/INTERVIEW_WALKTHROUGH.md`: write the missing Step 15 (PX-026/PX-028)
+
+**Status:** OPEN
+
+**Description:** Found while syncing docs after PX-034 (see the docs
+sync in PR #101): "Where things stand right now" at the bottom of
+`docs/INTERVIEW_WALKTHROUGH.md` already references `**Step 15
+(PX-026/PX-028) is done**` with a one-line summary, but there is no
+`## Step 15` section anywhere in the doc's body — the `## Step` headers
+jump straight from `## Step 14` (PX-025, Alertmanager) to `## Non-goals`.
+Every other step in this doc gets both a full narrative section and a
+"where things stand" mention; Step 15 only ever got the second. Not
+wrong information, just a dangling internal reference — someone reading
+the summary and scrolling up for the full PX-026/PX-028 story won't
+find it. Predates this ticket (PX-026/PX-028 shipped before this
+walkthrough doc's narrative-per-step convention was being kept
+this rigorously); caught, not caused, during the PX-034 docs sync.
+Deliberately kept out of that PR per this repo's no-bundling rule —
+this is unrelated content, not a stale-claim fix.
+
+**Sequencing:** independent, doc-only, no code/architecture dependency
+on anything else in the PX-031-035 sequence.
+
+**Acceptance criteria:**
+- [ ] `## Step 15 — <title>` section added to
+      `docs/INTERVIEW_WALKTHROUGH.md`, inserted between `## Step 14`
+      and `## Step 16` (the PX-031-034 section added by PR #101),
+      matching the existing narrative depth/style of Steps 13-16
+      (what it is / interesting findings / why worth telling)
+- [ ] Covers both PX-026 (real Prometheus metrics export for Redis,
+      Postgres, Longhorn, MinIO) and PX-028 (the hand-authored "project
+      services" Grafana dashboard) — content sourced from
+      `docs/TICKETS.md` PX-026/PX-028's own write-ups, not invented
+- [ ] "Where things stand right now" section's existing Step 15
+      mention is left accurate (or lightly adjusted if the new
+      section's framing needs it) rather than duplicated
+- [ ] No other section renumbered or otherwise touched — smallest
+      coherent change, consistent with this ticket's own scope note
+      about not bundling unrelated content
+
+---
+
 ## Ticket status
 
 | Ticket | Title | Status |
@@ -3571,3 +3613,4 @@ blocked by PX-032/PX-033/PX-034.
 | PX-033 | Terraform native `terraform test` | DONE |
 | PX-034 | Ansible Molecule tests for common/k3s-server/k3s-agent | DONE |
 | PX-035 | scripts/verify-live-cluster.sh — codify live-cluster verification | OPEN |
+| PX-036 | INTERVIEW_WALKTHROUGH.md — write the missing Step 15 (PX-026/PX-028) | OPEN |
