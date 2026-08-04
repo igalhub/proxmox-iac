@@ -3286,6 +3286,34 @@ clear diff, not a false pass — proved the schema-discovery pattern
 actually reads real config values through the mock, not random mock
 noise, before building the full suite on top of it.
 
+**Real bug caught by CI, not local testing — `mock_provider` doesn't
+shield Terraform Core builtins:** the first version of this suite
+passed locally but failed on the real GitHub Actions PR run
+(`Invalid value for "path" parameter: no file exists at
+"/home/runner/.ssh/homelab.pub"`). `vms.tf`'s
+`file(pathexpand(var.ssh_public_key_path))` is evaluated by Terraform
+Core itself while building the planned resource config — before the
+mocked provider ever gets involved — so `var.ssh_public_key_path`'s
+real default (`~/.ssh/homelab.pub`) only worked locally because that
+exact file happens to exist on the machine that owns this project's
+SSH key. Fixed by overriding the variable in the test file's own
+`variables` block to a small, checked-in fixture
+(`terraform/tests/fixtures/mock-ssh-key.pub`, not a real key — content
+is never validated, only read and trimmed). Verified for real, not
+assumed fixed: reran locally with `~/.ssh/homelab.pub` temporarily
+moved aside, confirmed the suite passes without it.
+
+**A second, related bug surfaced fixing the first one:** the new
+fixture file didn't actually stage with `git add` — a personal global
+gitignore rule (`*.pub`, sensible in general for real SSH keys) was
+silently excluding it, the same class of bug this repo has already hit
+three times (`*secrets*` swallowing `k8s/sealed-secrets/` in PX-009 and
+`k8s/argocd/apps/sealed-secrets.yaml` in PX-015). Caught via `git
+status` before committing, not after. Fixed the same way: an explicit
+per-file `!` negation in this repo's own `.gitignore`, not a change to
+the personal global file this repo can't enforce on a fresh
+clone/CI/another machine.
+
 **Description:** HCL-native `.tftest.hcl` files under
 `terraform/tests/`, using Terraform's built-in mock-provider support
 (`mock_provider`/`override_resource`) so assertions run against

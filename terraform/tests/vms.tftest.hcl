@@ -11,6 +11,14 @@ mock_provider "proxmox" {}
 variables {
   proxmox_endpoint  = "https://mock.invalid:8006/"
   proxmox_api_token = "mock@pve!mock=00000000-0000-0000-0000-000000000000"
+  # vms.tf's `file(pathexpand(var.ssh_public_key_path))` is a Terraform
+  # Core builtin, evaluated before the mocked provider ever sees the
+  # config — mock_provider does NOT shield this. The real default
+  # (~/.ssh/homelab.pub) only exists on the machine that actually owns
+  # this project's SSH key, so it must be overridden here to a checked-in
+  # fixture or every environment without that exact key (CI included)
+  # fails at plan time, not because the resource logic is wrong.
+  ssh_public_key_path = "./tests/fixtures/mock-ssh-key.pub"
 }
 
 run "cp1_sizing_and_network" {
