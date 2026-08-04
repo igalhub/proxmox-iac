@@ -1,9 +1,19 @@
 ---
+# get_url's own change-detection relies on get.k3s.io sending stable
+# Last-Modified/ETag headers to prove "unchanged, skip" — a dynamically
+# served script endpoint apparently doesn't reliably provide that, so
+# this reports changed on every rerun regardless of real state (PX-037).
+# The real "did anything actually change" signal is one task downstream,
+# in the install task's own creates: guard — this download has no
+# meaningful state effect of its own (a transient script re-fetched to
+# /tmp, immediately consumed by the next task), so it shouldn't be able
+# to fail idempotence on its own.
 - name: Download k3s install script
   ansible.builtin.get_url:
     url: https://get.k3s.io
     dest: /tmp/k3s-install.sh
     mode: "0755"
+  changed_when: false
 
 # Traefik disabled deliberately — nginx-ingress is installed instead in
 # PX-009, per docs/SPEC.md's "why nginx over the k3s default" rationale.
