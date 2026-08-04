@@ -5,27 +5,10 @@
 # each chart is pulled fresh before linting, not linted in place.
 set -euo pipefail
 
-declare -A CHART_REPOS=(
-  [ingress-nginx]="https://kubernetes.github.io/ingress-nginx"
-  [sealed-secrets]="https://bitnami.github.io/sealed-secrets"
-  [bitnami]="https://charts.bitnami.com/bitnami"
-  [postgres-operator-charts]="https://opensource.zalando.com/postgres-operator/charts/postgres-operator"
-  [prometheus-community]="https://prometheus-community.github.io/helm-charts"
-  [grafana]="https://grafana.github.io/helm-charts"
-  [jenkins]="https://charts.jenkins.io"
-)
-
-declare -A COMPONENT_CHARTS=(
-  [nginx-ingress]="ingress-nginx/ingress-nginx"
-  [sealed-secrets]="sealed-secrets/sealed-secrets"
-  [redis]="bitnami/redis"
-  [postgres-operator]="postgres-operator-charts/postgres-operator"
-  [kube-state-metrics]="prometheus-community/kube-state-metrics"
-  [node-exporter]="prometheus-community/prometheus-node-exporter"
-  [prometheus]="prometheus-community/prometheus"
-  [grafana]="grafana/grafana"
-  [jenkins]="jenkins/jenkins"
-)
+script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=./lib/helm-charts.sh
+# shellcheck disable=SC1091 # path is resolved at runtime, not statically followable
+source "$script_dir/lib/helm-charts.sh"
 
 for name in "${!CHART_REPOS[@]}"; do
   helm repo add "$name" "${CHART_REPOS[$name]}"

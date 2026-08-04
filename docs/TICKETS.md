@@ -3181,7 +3181,53 @@ rather than one large "test suite" ticket.
 
 ## PX-032 — K8s manifest / Helm-values validation via kubeconform
 
-**Status:** OPEN
+**Status:** DONE — closed out 2026-08-04.
+`scripts/validate-manifests.sh` validates every one of this repo's 14
+Helm charts (rendered fresh via `helm template` + this repo's own
+`values.yaml`, same pattern as `scripts/helm-lint-values.sh`) and every
+plain manifest under `k8s/` (36 files, 38 resources) via `kubeconform`.
+New `kubeconform` CI job added alongside `ansible-lint`.
+
+**Real findings from this ticket's own scope, fixed — not deferred:**
+1. **`scripts/helm-lint-values.sh` had zero lint coverage for 5 real
+   charts** (`alertmanager`/`argocd`/`longhorn`/`metallb`/`minio`) —
+   its own component list was never updated when those charts' tickets
+   (PX-015/PX-021/PX-022/PX-025) landed. Found as a byproduct of
+   building this ticket's chart inventory; confirmed with igalhub via
+   AskUserQuestion before fixing both scripts in the same PR rather
+   than filing separately, since both scripts need the identical chart
+   list and letting them diverge again was the root cause. Extracted
+   into a shared `scripts/lib/helm-charts.sh`, sourced by both scripts,
+   so this class of drift can't recur silently.
+2. **Two CRD schemas in the community
+   [datreeio/CRDs-catalog](https://github.com/datreeio/CRDs-catalog)
+   were stale relative to this cluster's actual live CRDs** — confirmed
+   directly via `kubectl get crd ... -o jsonpath=...`, not assumed:
+   `acid.zalan.do/postgresql_v1.json`'s `version` enum only allowed
+   `13`-`17` (live CRD allows `14`-`18`; this cluster runs Postgres 18,
+   verified live in PX-009), and `operatorconfiguration_v1.json` was
+   missing several fields the postgres-operator chart's own default
+   `OperatorConfiguration` CR sets (`logical_backup_failed_jobs_history_limit`,
+   `enable_maintenance_windows`, others — not this repo's own
+   `values.yaml`, purely the chart's shipped defaults). Both patched
+   locally in `scripts/crd-schemas/`, checked first before falling back
+   to the upstream catalog, full rationale and re-patch instructions in
+   `scripts/crd-schemas/README.md`.
+3. **`CustomResourceDefinition` objects themselves** (the ones charts
+   like ArgoCD/Longhorn/MetalLB bundle to install their own CRDs) have
+   no schema in any catalog — confirmed as a known, documented
+   kubeconform/upstream gap (`apiextensions.k8s.io` types aren't in the
+   standard K8s OpenAPI schema set this tooling is generated from), not
+   a real validation failure. Handled via `-ignore-missing-schemas`,
+   which correctly marks these as `Skipped` rather than `Errors` while
+   still catching genuine violations elsewhere.
+
+**Mutation-tested before closing:** temporarily set
+`postgresql-cr.yaml`'s `version` to an invalid value (`"99"`), reran —
+caught immediately with a clear schema error, confirmed real exit code
+1 (not just grep'd output). Reverted, confirmed `git diff` clean and a
+full clean run (`Invalid: 0, Errors: 0` across all 14 charts + 36
+plain manifests) before committing.
 
 **Description:** Schema-validate every rendered manifest under `k8s/`
 before it ever reaches `kubectl apply`/ArgoCD — catches malformed
@@ -3202,15 +3248,15 @@ natural next step before moving to the two on-thesis skill gaps
 (Terraform/Ansible).
 
 **Acceptance criteria:**
-- [ ] Every chart's rendered `helm template` output validated via
+- [x] Every chart's rendered `helm template` output validated via
       kubeconform, covering all CRDs actually in use (not just
       built-in K8s types)
-- [ ] Plain manifests (`k8s/landing-page/`, `k8s/test-app/`,
+- [x] Plain manifests (`k8s/landing-page/`, `k8s/test-app/`,
       `k8s/metallb/config/`, `k8s/longhorn/config/`) also validated,
       not just Helm-templated ones
-- [ ] Runs fully offline — no live cluster required
-- [ ] New CI job added, passing on a real PR
-- [ ] Any real schema violations found are fixed as part of this
+- [x] Runs fully offline — no live cluster required
+- [x] New CI job added, passing on a real PR
+- [x] Any real schema violations found are fixed as part of this
       ticket, not deferred
 
 ---
@@ -3370,7 +3416,7 @@ blocked by PX-032/PX-033/PX-034.
 | PX-029 | Document two monitoring-stack quirks found via the new dashboard | DONE |
 | PX-030 | Correct PX-007/016/023: Proxmox memory gauge is a permanent upstream limitation | DONE |
 | PX-031 | pytest suite for landing/'s Prometheus-query logic | DONE |
-| PX-032 | K8s manifest / Helm-values validation via kubeconform | OPEN |
+| PX-032 | K8s manifest / Helm-values validation via kubeconform | DONE |
 | PX-033 | Terraform native `terraform test` | OPEN |
 | PX-034 | Ansible Molecule tests for common/k3s-server/k3s-agent | OPEN |
 | PX-035 | scripts/verify-live-cluster.sh — codify live-cluster verification | OPEN |
