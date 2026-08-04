@@ -3612,7 +3612,7 @@ adjust. No other section touched or renumbered.
 
 ## PX-037 — Fix flaky Molecule idempotence: `get_url` against `get.k3s.io` reports `changed` on every rerun
 
-**Status:** OPEN
+**Status:** DONE
 
 **Description:** Found while re-running CI for an unrelated docs-only
 PR (#106, PX-036) — `molecule-k3s-server` and `molecule-k3s-agent` both
@@ -3644,17 +3644,17 @@ part of the PX-031-036 sequence, kept as its own ticket per the
 no-bundling rule rather than folded into PX-036's docs-only PR.
 
 **Acceptance criteria:**
-- [ ] `Download k3s install script` task in both
+- [x] `Download k3s install script` task in both
       `ansible/roles/k3s-server/tasks/main.yml` and
       `ansible/roles/k3s-agent/tasks/main.yml` marked `changed_when:
       false` (or equivalent), since the task's own actual state effect
       is irrelevant to idempotence — the install task's `creates:`
       guard is the real, already-correct signal
-- [ ] ansible-lint clean
-- [ ] `molecule-k3s-server` and `molecule-k3s-agent` both pass
+- [x] ansible-lint clean
+- [x] `molecule-k3s-server` and `molecule-k3s-agent` both pass
       idempotence cleanly in real CI (not just locally), confirmed via
       the actual run, not assumed
-- [ ] PR #106 (PX-036, blocked by this flake) rebased/updated and its
+- [x] PR #106 (PX-036, blocked by this flake) rebased/updated and its
       own CI reconfirmed green once this fix is on `master`
 
 ---
@@ -3699,4 +3699,4 @@ no-bundling rule rather than folded into PX-036's docs-only PR.
 | PX-034 | Ansible Molecule tests for common/k3s-server/k3s-agent | DONE |
 | PX-035 | scripts/verify-live-cluster.sh — codify live-cluster verification | DONE |
 | PX-036 | INTERVIEW_WALKTHROUGH.md — write the missing Step 15 (PX-026/PX-028) | DONE |
-| PX-037 | Fix flaky Molecule idempotence: get_url against get.k3s.io reports changed every rerun | OPEN |
+| PX-037 | Fix flaky Molecule idempotence: get_url against get.k3s.io reports changed every rerun | DONE |
