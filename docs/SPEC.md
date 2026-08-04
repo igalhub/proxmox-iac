@@ -542,3 +542,61 @@ against a real API (the `SDN.Use`/`VM.Config.HWType` permission gaps
 PX-004/PX-005 hit, for instance, would never surface here — those were
 real `403`s from the real Proxmox host, not something a mock provider
 can reproduce).
+
+## 15. Ansible Molecule test coverage (PX-034)
+
+**`ansible/roles/{common,k3s-server,k3s-agent}/molecule/default/`** —
+Molecule (Docker driver), running each role for real inside a
+privileged, systemd-capable container
+(`geerlingguy/docker-ubuntu2204-ansible`), not just linting it.
+`molecule test` runs the full sequence per role: converge (apply the
+role), idempotence (rerun, assert zero changes), and verify (assert on
+real outcome — packages installed, `deploy` user/sudoers/SSH-hardening
+state, k3s binaries present, k3s/k3s-agent systemd services active,
+real `k3s kubectl get nodes` reporting `Ready`). `k3s-agent`'s scenario
+runs two containers, mirroring the real `k3s_control_plane`/
+`k3s_workers` inventory groups, since its install genuinely depends on
+a live control-plane's token/URL via `hostvars` — there is no
+meaningful way to test it in isolation.
+
+**Two real, permanent fixes came out of this, not just test scaffolding:**
+
+- **Bounded install tasks.** k3s's systemd unit ships
+  `TimeoutStartSec=0` (retries forever by design), so a real underlying
+  failure looks identical to "still working" — a genuine risk on real
+  installs too, not just in CI. Both `k3s-server` and `k3s-agent`'s
+  install tasks are now wrapped in `async: 300`/`poll: 15` with a
+  `rescue` block that captures `systemctl status`/`journalctl -n 100`
+  diagnostics before failing — a permanent addition to
+  `ansible/roles/{k3s-server,k3s-agent}/tasks/main.yml`.
+- **Nested-overlayfs containerd fix, scoped to tests only.** Both
+  `k3s-server` and `k3s-agent` hit the identical real error inside
+  Molecule's container — `"overlayfs" snapshotter cannot be enabled ...
+  failed to mount overlay ... err: invalid argument` — because the test
+  container's own rootfs is already overlay2-backed, and containerd
+  cannot mount its own overlayfs snapshotter on top of another overlayfs
+  (documented upstream: k3s-io/k3s#3266, containerd/containerd#5464).
+  Fixed via `--snapshotter=native`, but deliberately scoped as new role
+  variables (`k3s_server_extra_install_args`,
+  `k3s_agent_extra_install_args`, both default `""`) rather than a
+  permanent flag — real Proxmox VMs aren't nested containers and don't
+  have this problem, and the native snapshotter is slower/less
+  space-efficient than the default. Production's `INSTALL_K3S_EXEC`
+  stays byte-for-byte unchanged; only each role's Molecule
+  `converge.yml` overrides it.
+
+**One task is excluded from Molecule entirely, not faked:**
+`common`'s "Ensure qemu-guest-agent is enabled and running" is tagged
+`molecule-notest` (a real Molecule built-in — `--skip-tags
+molecule-notest,notest` is applied automatically to every
+`ansible-playbook` invocation the `ansible` provisioner runs). This
+service genuinely cannot start in a container (no real virtio-serial
+channel/device for it to talk to) — it's guest-hardware-dependent with
+no container equivalent, so real VM verification (this project's
+existing practice) remains the actual proof this one task works.
+
+**Same caveat as §14 applies here too:** this is real behavioral
+coverage of this repo's own role logic, not a substitute for the real
+cluster verification every VM-affecting ticket already does by hand —
+see `docs/TICKETS.md` PX-035 (not yet built) for the plan to codify
+that manual ritual into `scripts/verify-live-cluster.sh`.

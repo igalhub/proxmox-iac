@@ -540,6 +540,64 @@ right."
 
 ---
 
+## Step 16 — Automated test suite: pytest, kubeconform, terraform test, Ansible Molecule (PX-031-034, done)
+
+**What it is:** every check up to this point ran against the live
+cluster by hand. This closed the gap with four small, deliberately
+sequenced tickets — one per layer, static/offline only, no live-cluster
+access from anything unattended in CI — rather than one "add tests"
+ticket: `landing/` (pytest + respx-mocked httpx, PX-031), K8s/Helm
+manifests (kubeconform, PX-032), Terraform (native `terraform test`
+with `mock_provider`, PX-033), and Ansible roles (Molecule, PX-034,
+deliberately last since expected to be the messiest).
+
+**The two most interesting findings, both about the gap between
+"passes locally" and "actually true":**
+
+1. **Terraform's `mock_provider` doesn't shield Terraform Core
+   builtins.** PX-033's suite passed locally, then failed in real CI —
+   `file()` tried to read `~/.ssh/homelab.pub`, a path that only exists
+   on the machine that owns the real key. `mock_provider` fakes the
+   *provider*, not Core functions like `file()`/`pathexpand()`. Fixed
+   with a checked-in, non-sensitive fixture key and a variable
+   override — the second time this exact class of gap hit this repo
+   (PX-032 found the same "local machine has files CI doesn't" pattern
+   independently, via two CRD schemas that were stale against the live
+   cluster's actual CRDs).
+2. **Molecule caught two real bugs, not just missing test coverage.**
+   `k3s-server`'s install hung 15+ minutes in CI with no output — k3s's
+   own systemd unit ships `TimeoutStartSec=0` (retries forever by
+   design), so a real failure looks identical to "still working." Fixed
+   with a bounded `async`/`poll` plus a `rescue` block capturing
+   `journalctl`/`systemctl status` diagnostics — a permanent addition
+   to the role, not test scaffolding, since the same hang risk exists
+   on real installs. That bound then surfaced the real error: both
+   `k3s-server` and `k3s-agent` hit an identical nested-overlayfs
+   containerd failure (the test container's own rootfs is already
+   overlay2-backed) — a documented upstream limitation
+   (k3s-io/k3s#3266), fixed via `--snapshotter=native`, scoped as a new
+   role variable defaulting to empty so real Proxmox VM installs stay
+   byte-for-byte unchanged. Separately, `k3s-agent`'s own `creates:`
+   idempotence guard pointed at a binary path (`/usr/local/bin/k3s-agent`)
+   that k3s's installer never actually creates — agent mode installs a
+   single shared `/usr/local/bin/k3s` binary, invoked as `k3s agent`,
+   confirmed from a real captured `ExecStart` line. A genuine bug in
+   this ticket's own code, caught only because idempotence is asserted
+   for real (rerun, expect zero changes) rather than trusted from a
+   single green run.
+
+**Why this is worth telling over "we added a test suite":** neither
+finding was a coverage gap closed by writing more assertions — both
+were the tests actually being adversarial enough to catch something
+true. The Molecule debugging loop is also a clean answer to "how do you
+debug a CI hang you can't reproduce locally": bound it first (so a real
+failure can't hide as "still running"), capture diagnostics on the
+bounded failure, then iterate off the *real* error message instead of
+guessing — which is exactly how the nested-overlayfs root cause and its
+upstream-documented fix were found, not assumed.
+
+---
+
 ## Non-goals — know these cold, they preempt a certain kind of question
 
 - **No HA control-plane** — single control-plane node is an accepted,
@@ -594,4 +652,11 @@ Grafana dashboard now puts all four in front of a real live view — the
 more interesting "here's proof it's alive" artifact than generic node
 metrics (PX-027 fixed a related cosmetic gap in the same area:
 node-exporter's dashboard was filtering on raw IPs instead of
-hostnames). Live status: `docs/TICKETS.md`.
+hostnames). **Step 16 (PX-031/032/033/034) is done**: an automated test
+suite now runs in CI on every push/PR — pytest (`landing/`), kubeconform
+(K8s/Helm manifests), native `terraform test`, and Ansible Molecule
+(all three roles run for real in disposable containers) — catching two
+genuine bugs along the way (a `TimeoutStartSec=0` CI-hang risk fixed
+permanently, and a nested-overlayfs containerd failure fixed via a
+test-scoped `--snapshotter=native`) rather than just adding coverage.
+Live status: `docs/TICKETS.md`.
