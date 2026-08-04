@@ -1,7 +1,13 @@
-# Bug report draft — for bugzilla.proxmox.com
+# Bug report — filed at bugzilla.proxmox.com
 
-Component suggestion: pve-manager (or "Proxmox VE" general, if pve-manager
-isn't a selectable component)
+**Filed:** 2026-08-04 as
+[Bug 7882](https://bugzilla.proxmox.com/show_bug.cgi?id=7882) — `pve`
+product, `Qemu` component, Proxmox VE 9.2.3, status `NEW`.
+
+Component: Qemu (QEMU/KVM Emulator) — the actual PVE Bugzilla component
+list has no separate "pvestatd" or backend-status category; Qemu is the
+closest match since this is about VM status/memory reporting, not the
+Web UI or generic Backend catch-all.
 
 ## Summary
 
@@ -13,7 +19,7 @@ value via the same QMP channel Proxmox already queries.
 
 ## Environment
 
-- Proxmox VE version: (fill in `pveversion -v` output)
+- Proxmox VE version: 9.2.3
 - QEMU version: pve-qemu-kvm 11.0.0-4
 - Guest OS: Ubuntu 24.04, kernel 6.8.0-136-generic
 - qemu-guest-agent: installed and running
