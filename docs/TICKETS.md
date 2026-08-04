@@ -3703,6 +3703,21 @@ pattern as PX-037.
       Validate/Helm Chart Lint/Build & Push stages checked for the same
       class of environment-setup mismatch against their CI equivalents)
 
+**Findings:** Fix merged via PR #110 (`5220145`). Jenkinsfile validated
+for real against the live Jenkins instance's own
+`/pipeline-model-converter/validate` endpoint before merge, not just
+locally. Post-merge: triggered a real build manually (Jenkins' `/build`
+REST endpoint, crumb+session-cookie auth) rather than waiting up to 5
+minutes for the next SCM poll — build #86 came back `SUCCESS`; the SCM
+poll itself also fired independently in the meantime and produced #85,
+also `SUCCESS` — two consecutive real successes, not a fluke. Confirmed
+in #86's own console log that `ANSIBLE_ROLES_PATH` resolved to the real
+workspace path (`/home/jenkins/agent/workspace/proxmox-iac-ci/ansible/roles`)
+and `ansible-lint` reported `0 failure(s), 0 warning(s)`. The other
+three stages (Terraform Validate, Helm Chart Lint, Build & Push Landing
+Image) were read in full before the fix — none reference Ansible roles
+or share this class of gap.
+
 ---
 
 ## Ticket status
