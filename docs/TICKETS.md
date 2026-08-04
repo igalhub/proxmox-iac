@@ -3610,6 +3610,55 @@ adjust. No other section touched or renumbered.
 
 ---
 
+## PX-037 — Fix flaky Molecule idempotence: `get_url` against `get.k3s.io` reports `changed` on every rerun
+
+**Status:** OPEN
+
+**Description:** Found while re-running CI for an unrelated docs-only
+PR (#106, PX-036) — `molecule-k3s-server` and `molecule-k3s-agent` both
+failed idempotence, with no code touched at all since their last green
+run. Root cause: the `Download k3s install script` task in both
+`ansible/roles/k3s-server/tasks/main.yml` and
+`ansible/roles/k3s-agent/tasks/main.yml` (`ansible.builtin.get_url`
+against `https://get.k3s.io`) reports `changed: true` on every rerun,
+not just the first. `get_url`'s own idempotency detection relies on the
+remote server sending stable caching headers (`Last-Modified`/`ETag`)
+to determine "content unchanged, skip" — `get.k3s.io` is a dynamically
+served script endpoint, and apparently doesn't reliably provide that,
+so `get_url` re-downloads and reports a change every time it can't
+prove otherwise. This must have gotten a favorable comparison by chance
+during PX-034's original runs (both scenarios passed idempotence
+cleanly then) and is now failing consistently — a latent flake, not a
+regression introduced by anything in this repo's own code.
+
+The real "did the system actually change" signal for both roles already
+lives one task downstream, in the install task's own
+`creates: /usr/local/bin/k3s`(`-agent`) guard — the download task itself
+has no meaningful state effect (it just fetches a transient script to
+`/tmp`, always overwritten, never read by anything except the very next
+task in the same play), so it shouldn't be able to fail idempotence on
+its own.
+
+**Sequencing:** independent bugfix, discovered opportunistically — not
+part of the PX-031-036 sequence, kept as its own ticket per the
+no-bundling rule rather than folded into PX-036's docs-only PR.
+
+**Acceptance criteria:**
+- [ ] `Download k3s install script` task in both
+      `ansible/roles/k3s-server/tasks/main.yml` and
+      `ansible/roles/k3s-agent/tasks/main.yml` marked `changed_when:
+      false` (or equivalent), since the task's own actual state effect
+      is irrelevant to idempotence — the install task's `creates:`
+      guard is the real, already-correct signal
+- [ ] ansible-lint clean
+- [ ] `molecule-k3s-server` and `molecule-k3s-agent` both pass
+      idempotence cleanly in real CI (not just locally), confirmed via
+      the actual run, not assumed
+- [ ] PR #106 (PX-036, blocked by this flake) rebased/updated and its
+      own CI reconfirmed green once this fix is on `master`
+
+---
+
 ## Ticket status
 
 | Ticket | Title | Status |
@@ -3650,3 +3699,4 @@ adjust. No other section touched or renumbered.
 | PX-034 | Ansible Molecule tests for common/k3s-server/k3s-agent | DONE |
 | PX-035 | scripts/verify-live-cluster.sh — codify live-cluster verification | DONE |
 | PX-036 | INTERVIEW_WALKTHROUGH.md — write the missing Step 15 (PX-026/PX-028) | OPEN |
+| PX-037 | Fix flaky Molecule idempotence: get_url against get.k3s.io reports changed every rerun | OPEN |
