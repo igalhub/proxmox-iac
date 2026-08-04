@@ -3492,7 +3492,7 @@ be needed.**
 
 ## PX-035 — `scripts/verify-live-cluster.sh`: codify the manual live-cluster verification ritual
 
-**Status:** OPEN
+**Status:** DONE
 
 **Description:** Every ticket this project has closed has run
 substantially the same live-cluster verification by hand: nodes
@@ -3515,19 +3515,19 @@ anytime after PX-031 establishes the CI/script pattern, but isn't
 blocked by PX-032/PX-033/PX-034.
 
 **Acceptance criteria:**
-- [ ] `scripts/verify-live-cluster.sh` checks: all 3 nodes `Ready`,
+- [x] `scripts/verify-live-cluster.sh` checks: all 3 nodes `Ready`,
       every ArgoCD Application `Synced`/`Healthy`, a defined list of
       ingress paths return `200`, Prometheus's `/api/v1/targets` shows
       no `down` targets
-- [ ] Script requires an explicit invocation (never wired into CI,
+- [x] Script requires an explicit invocation (never wired into CI,
       never auto-triggered on push/PR/schedule)
-- [ ] Script is idempotent/read-only — no state-changing calls, safe
+- [x] Script is idempotent/read-only — no state-changing calls, safe
       to run anytime without a go-ahead beyond "run this script"
-- [ ] Shellchecked clean, per this repo's hard rule for any committed
+- [x] Shellchecked clean, per this repo's hard rule for any committed
       bash
-- [ ] Run once for real against the live cluster as this ticket's own
+- [x] Run once for real against the live cluster as this ticket's own
       verification, output reviewed
-- [ ] `docs/SPEC.md` and/or `k8s/README.md` note this script as the
+- [x] `docs/SPEC.md` and/or `k8s/README.md` note this script as the
       standard close-out verification step going forward
 
 **Findings:** `scripts/verify-live-cluster.sh` written and run for real
@@ -3636,5 +3636,5 @@ on anything else in the PX-031-035 sequence.
 | PX-032 | K8s manifest / Helm-values validation via kubeconform | DONE |
 | PX-033 | Terraform native `terraform test` | DONE |
 | PX-034 | Ansible Molecule tests for common/k3s-server/k3s-agent | DONE |
-| PX-035 | scripts/verify-live-cluster.sh — codify live-cluster verification | OPEN |
+| PX-035 | scripts/verify-live-cluster.sh — codify live-cluster verification | DONE |
 | PX-036 | INTERVIEW_WALKTHROUGH.md — write the missing Step 15 (PX-026/PX-028) | OPEN |
