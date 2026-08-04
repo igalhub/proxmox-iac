@@ -214,4 +214,10 @@ jobs:
       - name: molecule test (common role)
         if: steps.check.outputs.present == 'true'
         working-directory: ansible/roles/common
+        # Same role-path issue as the ansible-lint job: converge.yml is
+        # nested deep inside the role's own directory tree, so Molecule's
+        # internal ansible-playbook invocation can't resolve `role: common`
+        # via the default sibling-dir lookup without this.
+        env:
+          ANSIBLE_ROLES_PATH: ${{ github.workspace }}/ansible/roles
         run: molecule test
