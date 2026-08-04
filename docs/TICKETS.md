@@ -3423,8 +3423,7 @@ be the messiest.
   throughout, `molecule-k3s-server` job green
   (run [30904714597](https://github.com/igalhub/proxmox-iac/actions/runs/30904714597)).
   CI job kept.
-- **`k3s-agent` — in progress, real fix identified and applied,
-  awaiting CI confirmation.** Genuine join test required a two-instance
+- **`k3s-agent` — fully passing, two real fixes required.** Genuine join test required a two-instance
   scenario at `ansible/roles/k3s-agent/molecule/default/` — one
   container running `k3s-server`, one running `k3s-agent` joining it —
   since the real task depends on a live control-plane's token/URL via
@@ -3450,8 +3449,44 @@ be the messiest.
   Fixed the same confirmed way: `--snapshotter=native` via
   `k3s_agent_extra_install_args` (new variable, empty default on real
   targets, same pattern as the server-side fix), set only in the
-  Molecule scenario. Rerun in progress
-  (commit `d423575`) — result to be recorded here once known.
+  Molecule scenario.
+
+  Rerun (commit `d423575`) got past the install and converged cleanly,
+  but failed a second, unrelated way: Molecule's idempotence check
+  (rerunning converge and asserting zero changes) failed on
+  `k3s-agent : Run the k3s install script`
+  (run [30908301235](https://github.com/igalhub/proxmox-iac/actions/runs/30908301235)).
+  Root cause was a real bug in this ticket's own code, not a
+  container/CI limitation: the task's `creates: /usr/local/bin/k3s-agent`
+  guard checked a path that never gets created — k3s agent mode installs
+  a single shared binary at `/usr/local/bin/k3s` (invoked as `k3s
+  agent`), confirmed via the real `k3s-agent.service` `ExecStart` line
+  captured earlier. With no separate `k3s-agent` binary to key off, the
+  `creates:` guard never matched, so the install task re-ran and
+  reported `changed=true` on every pass — including `verify.yml`'s stat
+  check, which had the same wrong path. Fixed both to
+  `/usr/local/bin/k3s` (commit `9a9ad9b`).
+
+  Verified locally rather than via another CI round-trip: Docker was
+  brought up on the dev machine specifically to shorten this debug
+  loop (`sudo systemctl start docker`, already-installed Docker
+  29.7.1), and `molecule test` was run directly against
+  `ansible/roles/k3s-agent/`. Real result: `converge`, `idempotence`,
+  and `verify` all passed cleanly — both nodes actually joined, both
+  reported `Ready`, the idempotence rerun showed `changed=0` on both
+  hosts, and `verify.yml`'s "assert exactly 2 nodes joined" /
+  "assert both nodes report Ready" checks both passed for real (not
+  skipped). CI job (`molecule-k3s-agent`) kept.
+
+**PX-034 status: all three roles (`common`, `k3s-server`, `k3s-agent`)
+have real, CI-wired Molecule coverage. `common` and `k3s-server` needed
+one real fix each (a container-only task exclusion, and
+`--snapshotter=native` for nested overlayfs); `k3s-agent` needed the
+same nested-overlayfs fix plus a genuine bug fix in this ticket's own
+`creates:`/verify path assumptions. No role was found "not practical in
+a container" — the honest partial-coverage or hard-stop outcomes this
+ticket's acceptance criteria explicitly allowed for turned out not to
+be needed.**
 
 ---
 
