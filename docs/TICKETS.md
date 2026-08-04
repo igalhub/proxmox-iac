@@ -3558,7 +3558,7 @@ satisfies the "and/or" acceptance criterion; can add if wanted).
 
 ## PX-036 — `docs/INTERVIEW_WALKTHROUGH.md`: write the missing Step 15 (PX-026/PX-028)
 
-**Status:** OPEN
+**Status:** DONE
 
 **Description:** Found while syncing docs after PX-034 (see the docs
 sync in PR #101): "Where things stand right now" at the bottom of
@@ -3580,19 +3580,19 @@ this is unrelated content, not a stale-claim fix.
 on anything else in the PX-031-035 sequence.
 
 **Acceptance criteria:**
-- [ ] `## Step 15 — <title>` section added to
+- [x] `## Step 15 — <title>` section added to
       `docs/INTERVIEW_WALKTHROUGH.md`, inserted between `## Step 14`
       and `## Step 16` (the PX-031-034 section added by PR #101),
       matching the existing narrative depth/style of Steps 13-16
       (what it is / interesting findings / why worth telling)
-- [ ] Covers both PX-026 (real Prometheus metrics export for Redis,
+- [x] Covers both PX-026 (real Prometheus metrics export for Redis,
       Postgres, Longhorn, MinIO) and PX-028 (the hand-authored "project
       services" Grafana dashboard) — content sourced from
       `docs/TICKETS.md` PX-026/PX-028's own write-ups, not invented
-- [ ] "Where things stand right now" section's existing Step 15
+- [x] "Where things stand right now" section's existing Step 15
       mention is left accurate (or lightly adjusted if the new
       section's framing needs it) rather than duplicated
-- [ ] No other section renumbered or otherwise touched — smallest
+- [x] No other section renumbered or otherwise touched — smallest
       coherent change, consistent with this ticket's own scope note
       about not bundling unrelated content
 
@@ -3649,4 +3649,4 @@ adjust. No other section touched or renumbered.
 | PX-033 | Terraform native `terraform test` | DONE |
 | PX-034 | Ansible Molecule tests for common/k3s-server/k3s-agent | DONE |
 | PX-035 | scripts/verify-live-cluster.sh — codify live-cluster verification | DONE |
-| PX-036 | INTERVIEW_WALKTHROUGH.md — write the missing Step 15 (PX-026/PX-028) | OPEN |
+| PX-036 | INTERVIEW_WALKTHROUGH.md — write the missing Step 15 (PX-026/PX-028) | DONE |
