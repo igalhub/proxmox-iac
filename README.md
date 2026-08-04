@@ -30,7 +30,7 @@ terraform/    # VM provisioning (Phase 1); tests/ = terraform test coverage (PX-
 ansible/      # VM bootstrap + k3s install (Phase 2); roles/*/molecule/ = Molecule test scenarios (PX-034)
 k8s/          # Helm values / manifests / ArgoCD app defs (Phase 3+)
 landing/      # Landing page app (FastAPI, live Prometheus metrics); tests/ = pytest suite (PX-031)
-scripts/      # host scripts (cloud-init template build) plus CI-wired manifest/Helm-values validation (PX-032)
+scripts/      # host scripts (cloud-init template build), CI-wired manifest/Helm-values validation (PX-032), and verify-live-cluster.sh — deliberately not CI-wired, human-invoked live-cluster verification (PX-035)
 hooks/        # tracked pre-commit hook source
 .github/      # CI workflows
 .claude/      # Claude Code adapter scripts (dev-check.sh)
@@ -65,8 +65,11 @@ this cluster's memory usage. An automated test suite (PX-031-034) now
 covers `landing/` (pytest), K8s/Helm manifests (kubeconform), Terraform
 (native `terraform test`), and all three Ansible roles (Molecule,
 running each role for real in a disposable container) — see the CI
-section below and `docs/SPEC.md` §14-15. Live progress:
-`docs/TICKETS.md`.
+section below and `docs/SPEC.md` §14-15. `scripts/verify-live-cluster.sh`
+(PX-035) codifies the one check that can't run in CI — nodes `Ready`,
+ArgoCD Applications `Synced`/`Healthy`, ingress paths live, Prometheus
+targets up — invoked by hand as part of a ticket's close-out
+(`docs/SPEC.md` §16). Live progress: `docs/TICKETS.md`.
 
 ## Setup
 

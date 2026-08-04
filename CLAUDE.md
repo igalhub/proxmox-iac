@@ -29,7 +29,7 @@ terraform/    # VM provisioning (Phase 1); tests/ = terraform test coverage (PX-
 ansible/      # VM bootstrap + k3s install (Phase 2); roles/*/molecule/ = Molecule test scenarios (PX-034)
 k8s/          # Helm values / manifests / ArgoCD app defs (Phase 3+)
 landing/      # Landing page app (FastAPI, live Prometheus metrics); tests/ = pytest suite (PX-031)
-scripts/      # host scripts (cloud-init template build) plus CI-wired manifest/Helm-values validation (PX-032: validate-manifests.sh, helm-lint-values.sh, lib/, crd-schemas/)
+scripts/      # host scripts (cloud-init template build), CI-wired manifest/Helm-values validation (PX-032: validate-manifests.sh, helm-lint-values.sh, lib/, crd-schemas/), and verify-live-cluster.sh — deliberately not CI-wired, human-invoked live-cluster verification (PX-035)
 hooks/        # tracked pre-commit hook source (installed via `make install-hooks`)
 .github/      # CI workflows
 .claude/      # Claude Code adapter scripts (dev-check.sh)
