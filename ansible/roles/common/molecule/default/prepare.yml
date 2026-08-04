@@ -1,0 +1,23 @@
+---
+# Bridges the one real gap between this minimal test image and the
+# actual target: a real cloud-init Ubuntu VM always has openssh-server
+# already running (that's how Ansible reaches it at all — see
+# docs/SPEC.md §1), but geerlingguy/docker-ubuntu2204-ansible doesn't
+# ship it by default. Installing it here isn't faking the role's own
+# logic — it's establishing the same starting state the real target
+# already has before the common role's own SSH-hardening tasks run.
+- name: Prepare
+  hosts: all
+  become: true
+  tasks:
+    - name: Install openssh-server so the common role's SSH-hardening tasks have something to harden
+      ansible.builtin.apt:
+        name: openssh-server
+        state: present
+        update_cache: true
+
+    - name: Ensure sshd is enabled and running
+      ansible.builtin.systemd:
+        name: ssh
+        enabled: true
+        state: started
