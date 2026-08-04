@@ -32,9 +32,9 @@
   hosts: k3s_workers
   become: true
   tasks:
-    - name: Assert k3s-agent binary was installed
+    - name: Assert k3s binary was installed
       ansible.builtin.stat:
-        path: /usr/local/bin/k3s-agent
+        path: /usr/local/bin/k3s
       register: k3s_agent_binary
       failed_when: not k3s_agent_binary.stat.exists
 

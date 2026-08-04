@@ -18,7 +18,11 @@
     - name: Run the k3s install script
       ansible.builtin.command: /tmp/k3s-install.sh
       args:
-        creates: /usr/local/bin/k3s-agent
+        # k3s agent mode installs a single shared binary at
+        # /usr/local/bin/k3s (invoked as `k3s agent`, confirmed via a
+        # real k3s-agent.service ExecStart during PX-034's Molecule
+        # run) — there is no separate k3s-agent binary to key off.
+        creates: /usr/local/bin/k3s
       environment:
         INSTALL_K3S_EXEC: "agent {{ k3s_agent_extra_install_args }}"
         K3S_URL: "https://{{ k3s_agent_control_plane_host }}:6443"
