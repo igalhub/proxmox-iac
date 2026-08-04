@@ -11,14 +11,48 @@
 # docs/SPEC.md §1 — k3s does NOT apply this by default (a documented
 # assumption that turned out to be wrong; caught in PX-010, corrected
 # here so a future VM rebuild doesn't silently lose the taint again).
+#
+# Bounded via async/poll (5m) rather than left to run indefinitely:
+# k3s's own systemd unit ships with TimeoutStartSec=0 (retries forever
+# by design), so a real underlying problem (nested overlayfs, cgroup v2
+# delegation, a stalled image pull) would otherwise hang rather than
+# fail with a clear error — confirmed as a real risk during PX-034's
+# Molecule investigation, not a hypothetical. Real installs against
+# actual Proxmox VMs (PX-008) have always completed in well under this
+# window, so the bound is a safety net here, not a functional change.
 - name: Install k3s server (control-plane)
-  ansible.builtin.command: /tmp/k3s-install.sh
-  args:
-    creates: /usr/local/bin/k3s
-  environment:
-    INSTALL_K3S_EXEC: >-
-      server --disable=traefik --write-kubeconfig-mode=644
-      --node-taint node-role.kubernetes.io/control-plane=true:NoSchedule
+  block:
+    - name: Run the k3s install script
+      ansible.builtin.command: /tmp/k3s-install.sh
+      args:
+        creates: /usr/local/bin/k3s
+      environment:
+        INSTALL_K3S_EXEC: >-
+          server --disable=traefik --write-kubeconfig-mode=644
+          --node-taint node-role.kubernetes.io/control-plane=true:NoSchedule
+          {{ k3s_server_extra_install_args }}
+      async: 300
+      poll: 15
+  rescue:
+    - name: Capture k3s service status for diagnostics
+      ansible.builtin.command: systemctl status k3s --no-pager
+      register: k3s_status_debug
+      failed_when: false
+      changed_when: false
+
+    - name: Capture k3s journal for diagnostics
+      ansible.builtin.command: journalctl -u k3s --no-pager -n 100
+      register: k3s_journal_debug
+      failed_when: false
+      changed_when: false
+
+    - name: Show diagnostics
+      ansible.builtin.debug:
+        msg: "{{ (k3s_status_debug.stdout_lines | default([])) + ['---'] + (k3s_journal_debug.stdout_lines | default([])) }}"
+
+    - name: Re-raise the original failure
+      ansible.builtin.fail:
+        msg: "k3s install did not complete within the bounded async window - see diagnostics above"
 
 - name: Wait for node token to exist
   ansible.builtin.wait_for:
@@ -48,6 +82,13 @@
     dest: "{{ k3s_kubeconfig_local_path }}"
     flat: true
 
+# molecule-notest: rewrites the fetched kubeconfig for real external
+# access via this host's real ansible_host. Molecule's Docker connection
+# doesn't set ansible_host the way a real SSH-connected inventory host
+# does (see docs/TICKETS.md PX-034 — overriding it at the play level to
+# work around this broke Molecule's own connection instead), and a
+# real-network kubeconfig address isn't something this scenario needs
+# to verify anyway.
 - name: Point local kubeconfig at the control-plane's real IP, not 127.0.0.1
   become: false
   delegate_to: localhost
@@ -55,3 +96,4 @@
     path: "{{ k3s_kubeconfig_local_path }}"
     regexp: 'https://127\.0\.0\.1:6443'
     replace: "https://{{ ansible_host }}:6443"
+  tags: [molecule-notest]

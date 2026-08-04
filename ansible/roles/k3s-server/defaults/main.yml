@@ -1,2 +1,14 @@
 ---
 k3s_kubeconfig_local_path: "{{ playbook_dir }}/../.kubeconfig"
+
+# Empty on real targets (containerd's default overlayfs snapshotter is
+# correct there — real VMs, not nested containers). PX-034's Molecule
+# scenario overrides this to "--snapshotter=native": the test
+# container's own rootfs is already overlay2-backed (Docker's default
+# storage driver), and containerd cannot mount its own overlayfs
+# snapshotter on top of another overlayfs (confirmed via a real
+# captured error, and matches the documented upstream workaround —
+# k3s-io/k3s#3266, containerd/containerd#5464). Scoped as a variable
+# rather than a permanent flag so this test-environment-only fix never
+# touches real Proxmox VM behavior.
+k3s_server_extra_install_args: ""

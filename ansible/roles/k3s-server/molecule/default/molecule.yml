@@ -1,0 +1,30 @@
+# One bounded, honest attempt (PX-034) at running the real k3s install
+# inside a privileged, systemd-capable Docker container. This is
+# explicitly higher-risk than the common role's scenario — k3s needs
+# real kernel-level support (overlayfs, iptables/nftables, cgroup
+# driver detection) that a generic Ubuntu container may or may not
+# provide cleanly even when privileged. If this doesn't work, "not
+# practical in a container" is an accepted, honest outcome per this
+# ticket's own scope — see docs/TICKETS.md PX-034 for the actual result.
+dependency:
+  name: galaxy
+  options:
+    requirements-file: ../../../../requirements.yml
+driver:
+  name: docker
+platforms:
+  - name: k3s-server-ubuntu2204
+    image: geerlingguy/docker-ubuntu2204-ansible:latest
+    command: /lib/systemd/systemd
+    privileged: true
+    cgroupns_mode: host
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+provisioner:
+  name: ansible
+  playbooks:
+    prepare: prepare.yml
+    converge: converge.yml
+    verify: verify.yml
+verifier:
+  name: ansible

@@ -1,0 +1,39 @@
+# PX-034: k3s-agent's install genuinely depends on a live control-plane
+# (K3S_URL/K3S_TOKEN come from its hostvars — see
+# ansible/roles/k3s-agent/tasks/main.yml), so this scenario runs two
+# containers mirroring the real k3s_control_plane / k3s_workers
+# inventory groups (see ansible/inventory) rather than testing the
+# agent role in isolation against something fake.
+dependency:
+  name: galaxy
+  options:
+    requirements-file: ../../../../requirements.yml
+driver:
+  name: docker
+platforms:
+  - name: k3s-agent-control-plane
+    image: geerlingguy/docker-ubuntu2204-ansible:latest
+    command: /lib/systemd/systemd
+    privileged: true
+    cgroupns_mode: host
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+    groups:
+      - k3s_control_plane
+  - name: k3s-agent-worker
+    image: geerlingguy/docker-ubuntu2204-ansible:latest
+    command: /lib/systemd/systemd
+    privileged: true
+    cgroupns_mode: host
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+    groups:
+      - k3s_workers
+provisioner:
+  name: ansible
+  playbooks:
+    prepare: prepare.yml
+    converge: converge.yml
+    verify: verify.yml
+verifier:
+  name: ansible

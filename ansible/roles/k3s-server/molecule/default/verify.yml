@@ -1,0 +1,35 @@
+---
+- name: Verify
+  hosts: all
+  become: true
+  tasks:
+    - name: Assert k3s binary was installed
+      ansible.builtin.stat:
+        path: /usr/local/bin/k3s
+      register: k3s_binary
+      failed_when: not k3s_binary.stat.exists
+
+    - name: Gather service facts
+      ansible.builtin.service_facts:
+
+    - name: Assert k3s service is active
+      ansible.builtin.assert:
+        that:
+          - "'k3s.service' in ansible_facts.services"
+          - "ansible_facts.services['k3s.service'].state == 'running'"
+        fail_msg: "k3s.service is not running"
+
+    - name: Assert the control-plane node reports Ready
+      ansible.builtin.command: k3s kubectl get nodes -o jsonpath="{.items[0].status.conditions[?(@.type=='Ready')].status}"
+      register: node_ready_status
+      changed_when: false
+      retries: 10
+      delay: 6
+      until: node_ready_status.stdout == "True"
+
+    - name: Assert the control-plane node-taint was applied
+      ansible.builtin.command: >-
+        k3s kubectl get nodes -o jsonpath="{.items[0].spec.taints[?(@.key=='node-role.kubernetes.io/control-plane')].effect}"
+      register: control_plane_taint
+      changed_when: false
+      failed_when: control_plane_taint.stdout != "NoSchedule"

@@ -59,3 +59,7 @@ __pycache__/
 # rather than widening the pattern, since a real *.pub file landing
 # here in the future should stay caught.
 !terraform/tests/fixtures/mock-ssh-key.pub
+
+# Third occurrence of the same "*.pub" gitignore gap (PX-034) — same
+# reasoning, same per-file override rather than widening the pattern.
+!ansible/roles/common/molecule/default/files/mock-ssh-key.pub

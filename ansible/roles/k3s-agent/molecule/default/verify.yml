@@ -1,0 +1,49 @@
+---
+- name: Verify control-plane
+  hosts: k3s_control_plane
+  become: true
+  tasks:
+    - name: Gather service facts
+      ansible.builtin.service_facts:
+
+    - name: Assert k3s service is active
+      ansible.builtin.assert:
+        that:
+          - "'k3s.service' in ansible_facts.services"
+          - "ansible_facts.services['k3s.service'].state == 'running'"
+        fail_msg: "k3s.service is not running"
+
+    - name: Assert both nodes report Ready
+      ansible.builtin.command: >-
+        k3s kubectl get nodes -o jsonpath="{.items[*].status.conditions[?(@.type=='Ready')].status}"
+      register: k3s_agent_nodes_ready_status
+      changed_when: false
+      retries: 15
+      delay: 6
+      until: k3s_agent_nodes_ready_status.stdout.split() == ['True', 'True']
+
+    - name: Assert exactly 2 nodes joined the cluster
+      ansible.builtin.command: k3s kubectl get nodes -o jsonpath="{.items[*].metadata.name}"
+      register: k3s_agent_node_names
+      changed_when: false
+      failed_when: k3s_agent_node_names.stdout.split() | length != 2
+
+- name: Verify worker
+  hosts: k3s_workers
+  become: true
+  tasks:
+    - name: Assert k3s binary was installed
+      ansible.builtin.stat:
+        path: /usr/local/bin/k3s
+      register: k3s_agent_binary
+      failed_when: not k3s_agent_binary.stat.exists
+
+    - name: Gather service facts
+      ansible.builtin.service_facts:
+
+    - name: Assert k3s-agent service is active
+      ansible.builtin.assert:
+        that:
+          - "'k3s-agent.service' in ansible_facts.services"
+          - "ansible_facts.services['k3s-agent.service'].state == 'running'"
+        fail_msg: "k3s-agent.service is not running"

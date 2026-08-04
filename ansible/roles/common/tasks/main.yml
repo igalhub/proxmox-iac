@@ -12,11 +12,21 @@
       - qemu-guest-agent
     state: present
 
+# molecule-notest: qemu-guest-agent genuinely cannot start in a
+# container (no real virtio-serial channel/device for it to talk to —
+# confirmed via a real PX-034 Molecule run: "A dependency job for
+# qemu-guest-agent.service failed"). This isn't a test-environment
+# quirk to work around; the task is fundamentally guest-hardware-
+# dependent and has no container equivalent, so it's excluded from
+# Molecule's converge via its own built-in tag convention rather than
+# faked. Real VM verification (this project's existing practice) is
+# still the actual proof this task works — see docs/TICKETS.md PX-034.
 - name: Ensure qemu-guest-agent is enabled and running
   ansible.builtin.systemd:
     name: qemu-guest-agent
     enabled: true
     state: started
+  tags: [molecule-notest]
 
 - name: Create non-root deploy user
   ansible.builtin.user:

@@ -3346,7 +3346,7 @@ the higher-friction Ansible ticket.
 
 ## PX-034 — Ansible Molecule tests for `common`/`k3s-server`/`k3s-agent`
 
-**Status:** OPEN
+**Status:** DONE
 
 **Description:** Molecule-driven tests (Docker/Podman-backed
 disposable containers) for the three roles, going beyond
@@ -3373,18 +3373,120 @@ skill gap (Ansible), sequenced last on purpose since it's expected to
 be the messiest.
 
 **Acceptance criteria:**
-- [ ] Molecule scenario(s) added for at least the `common` role,
+- [x] Molecule scenario(s) added for at least the `common` role,
       running fully offline (no real Proxmox VMs)
-- [ ] k3s-server/k3s-agent attempted; outcome documented honestly
+- [x] k3s-server/k3s-agent attempted; outcome documented honestly
       either way — full coverage, partial coverage with a named
       reason, or "not practical in a container, here's why" are all
       acceptable closes for this ticket
-- [ ] Any systemd/container-model limitations hit are written up in
+- [x] Any systemd/container-model limitations hit are written up in
       `docs/TICKETS.md` and, if architecturally relevant,
       `docs/SPEC.md` — not silently worked around
-- [ ] CI job added only for whatever portion actually runs cleanly and
+- [x] CI job added only for whatever portion actually runs cleanly and
       fast enough for CI; anything left manual is stated as such, not
       left ambiguous
+
+**Findings so far:**
+
+- **`common` role — fully passing.** Molecule scenario at
+  `ansible/roles/common/molecule/default/` converges, is idempotent
+  (`changed=0` on rerun), and verify checks all pass in CI
+  (`molecule-common` job). One task
+  (`Ensure qemu-guest-agent is enabled and running`) is tagged
+  `molecule-notest` — a service that genuinely cannot start inside a
+  test container, as predicted in this ticket's own description.
+- **`k3s-server` role — fully passing, one real fix required.** First
+  attempt hung 15+ minutes with no output (k3s's systemd unit ships
+  `TimeoutStartSec=0`, retries forever by design, so a real failure
+  looks identical to "still working"). Bounded the install task with
+  `async: 300` / `poll: 15` plus a `rescue` block that captures
+  `systemctl status k3s` and `journalctl -u k3s -n 100` on failure —
+  this is a permanent addition to
+  `ansible/roles/k3s-server/tasks/main.yml`, not test-only scaffolding,
+  since the same indefinite-hang risk exists on real installs too.
+  With that bound in place, the real captured error was:
+  `"overlayfs" snapshotter cannot be enabled ... failed to mount
+  overlay: ... invalid argument` — containerd's overlayfs snapshotter
+  cannot mount over the test container's own overlay2-backed rootfs
+  (Docker's default storage driver), a known nested-overlayfs
+  limitation (k3s-io/k3s#3266, containerd/containerd#5464). Fixed by
+  adding `--snapshotter=native` to `INSTALL_K3S_EXEC`, but scoped as a
+  new role variable, `k3s_server_extra_install_args` (default `""`,
+  documented in `ansible/roles/k3s-server/defaults/main.yml`), rather
+  than a permanent flag — real Proxmox VM installs aren't nested
+  containers and don't have this problem, and the native snapshotter is
+  slower/less space-efficient than the default, so production's
+  `INSTALL_K3S_EXEC` stays byte-for-byte unchanged. Only
+  `ansible/roles/k3s-server/molecule/default/converge.yml` overrides it
+  to `"--snapshotter=native"`. Rerun in CI completed cleanly: install
+  finished in ~45s (well inside the 5-minute bound), `rescued=0`
+  throughout, `molecule-k3s-server` job green
+  (run [30904714597](https://github.com/igalhub/proxmox-iac/actions/runs/30904714597)).
+  CI job kept.
+- **`k3s-agent` — fully passing, two real fixes required.** Genuine join test required a two-instance
+  scenario at `ansible/roles/k3s-agent/molecule/default/` — one
+  container running `k3s-server`, one running `k3s-agent` joining it —
+  since the real task depends on a live control-plane's token/URL via
+  `hostvars`. Also required a new `k3s_agent_control_plane_host` role
+  variable (same rationale as `k3s_server_extra_install_args`: defaults
+  to the exact expression previously hardcoded, so real installs are
+  byte-for-byte unchanged; only Molecule's `converge.yml` overrides it,
+  since Molecule's Docker connection doesn't set `ansible_host` to a
+  routable container address), and the same async/poll(5m)+rescue bound
+  added to `ansible/roles/k3s-agent/tasks/main.yml`'s install task
+  (same `TimeoutStartSec=0` risk as k3s-server's).
+
+  First run (agent side left at its default, tested independently
+  rather than assumed from k3s-server's pre-fix result) hit the bounded
+  5-minute timeout. The rescue block's captured `journalctl` showed the
+  real cause: the agent's own containerd instance (separate from the
+  server's) hit the identical error —
+  `"overlayfs" snapshotter cannot be enabled for
+  "/var/lib/rancher/k3s/agent/containerd" ... failed to mount overlay
+  ... err: invalid argument` — same nested-overlayfs limitation as
+  k3s-server, on a different containerd process
+  (run [30907365981](https://github.com/igalhub/proxmox-iac/actions/runs/30907365981)).
+  Fixed the same confirmed way: `--snapshotter=native` via
+  `k3s_agent_extra_install_args` (new variable, empty default on real
+  targets, same pattern as the server-side fix), set only in the
+  Molecule scenario.
+
+  Rerun (commit `d423575`) got past the install and converged cleanly,
+  but failed a second, unrelated way: Molecule's idempotence check
+  (rerunning converge and asserting zero changes) failed on
+  `k3s-agent : Run the k3s install script`
+  (run [30908301235](https://github.com/igalhub/proxmox-iac/actions/runs/30908301235)).
+  Root cause was a real bug in this ticket's own code, not a
+  container/CI limitation: the task's `creates: /usr/local/bin/k3s-agent`
+  guard checked a path that never gets created — k3s agent mode installs
+  a single shared binary at `/usr/local/bin/k3s` (invoked as `k3s
+  agent`), confirmed via the real `k3s-agent.service` `ExecStart` line
+  captured earlier. With no separate `k3s-agent` binary to key off, the
+  `creates:` guard never matched, so the install task re-ran and
+  reported `changed=true` on every pass — including `verify.yml`'s stat
+  check, which had the same wrong path. Fixed both to
+  `/usr/local/bin/k3s` (commit `9a9ad9b`).
+
+  Verified locally rather than via another CI round-trip: Docker was
+  brought up on the dev machine specifically to shorten this debug
+  loop (`sudo systemctl start docker`, already-installed Docker
+  29.7.1), and `molecule test` was run directly against
+  `ansible/roles/k3s-agent/`. Real result: `converge`, `idempotence`,
+  and `verify` all passed cleanly — both nodes actually joined, both
+  reported `Ready`, the idempotence rerun showed `changed=0` on both
+  hosts, and `verify.yml`'s "assert exactly 2 nodes joined" /
+  "assert both nodes report Ready" checks both passed for real (not
+  skipped). CI job (`molecule-k3s-agent`) kept.
+
+**PX-034 status: all three roles (`common`, `k3s-server`, `k3s-agent`)
+have real, CI-wired Molecule coverage. `common` and `k3s-server` needed
+one real fix each (a container-only task exclusion, and
+`--snapshotter=native` for nested overlayfs); `k3s-agent` needed the
+same nested-overlayfs fix plus a genuine bug fix in this ticket's own
+`creates:`/verify path assumptions. No role was found "not practical in
+a container" — the honest partial-coverage or hard-stop outcomes this
+ticket's acceptance criteria explicitly allowed for turned out not to
+be needed.**
 
 ---
 
@@ -3467,5 +3569,5 @@ blocked by PX-032/PX-033/PX-034.
 | PX-031 | pytest suite for landing/'s Prometheus-query logic | DONE |
 | PX-032 | K8s manifest / Helm-values validation via kubeconform | DONE |
 | PX-033 | Terraform native `terraform test` | DONE |
-| PX-034 | Ansible Molecule tests for common/k3s-server/k3s-agent | OPEN |
+| PX-034 | Ansible Molecule tests for common/k3s-server/k3s-agent | DONE |
 | PX-035 | scripts/verify-live-cluster.sh — codify live-cluster verification | OPEN |

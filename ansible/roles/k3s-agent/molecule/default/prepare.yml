@@ -1,0 +1,16 @@
+---
+# On the real target, the common role always runs before k3s-server/
+# k3s-agent (see ansible/site.yml's play order) and installs curl as a
+# baseline package. This scenario tests k3s-server + k3s-agent in
+# isolation from common, so it needs the same starting state bridged
+# here — not faking either role's own logic, just restoring the
+# precondition the real playbook run already guarantees.
+- name: Prepare
+  hosts: all
+  become: true
+  tasks:
+    - name: Install curl (normally installed by the common role first)
+      ansible.builtin.apt:
+        name: curl
+        state: present
+        update_cache: true
