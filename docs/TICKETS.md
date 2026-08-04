@@ -3115,7 +3115,30 @@ actually files it, replace this note with the real bug ID/URL.**
 
 ## PX-031 — pytest suite for `landing/`'s Prometheus-query logic
 
-**Status:** OPEN
+**Status:** DONE — closed out 2026-08-04. `landing/tests/test_main.py`
+(8 tests) covers `scalar()` (empty/default/happy path),
+`query_prometheus()`'s `HTTPStatusError` propagation, and all three
+`/` outcomes (happy path, unreachable Prometheus, malformed response),
+plus `/healthz`. All mocked via `respx` against `httpx` — no real
+Prometheus/cluster reachability needed, confirmed by running the suite
+with no network access to anything in this cluster. New `pytest` CI
+job added (guarded the same way the existing `ruff` job is), plus
+`landing/requirements-dev.txt` (`pytest`, `respx`, pinned) kept
+separate from `landing/requirements.txt` since these are test-only,
+not shipped in the Docker image. `Makefile`'s `test` target now
+actually runs this suite via `cd landing && pytest -q` instead of only
+printing the placeholder message (Terraform/Ansible/K8s still show the
+placeholder, correctly, until PX-032/033/034/035 land).
+
+**Mutation-tested before closing**, not just "tests pass": temporarily
+broke `scalar()` to always return its default, reran the suite —
+`test_scalar_extracts_value_from_result` and `test_index_happy_path`
+both failed as expected, confirming the suite actually catches
+breakage rather than passing vacuously. Reverted, confirmed `git diff`
+clean and all 8 tests green again before committing. Also caught by
+`ruff` during implementation (not by hand): an unsorted import block
+in the new test file, fixed via `ruff check landing/ --fix` and
+re-verified the fix didn't change test behavior.
 
 **Description:** The one component in this repo that's actual
 application code, currently with zero test coverage. Add
@@ -3140,13 +3163,13 @@ script, deliberately kept as small independently-reviewable tickets
 rather than one large "test suite" ticket.
 
 **Acceptance criteria:**
-- [ ] `landing/tests/` covers `scalar()`, `query_prometheus()`, both
+- [x] `landing/tests/` covers `scalar()`, `query_prometheus()`, both
       `/` error paths, and `/healthz`
-- [ ] Tests run fully offline — no real Prometheus/cluster
+- [x] Tests run fully offline — no real Prometheus/cluster
       reachability required
-- [ ] New `pytest` CI job added, guarded to no-op if `landing/`
+- [x] New `pytest` CI job added, guarded to no-op if `landing/`
       doesn't exist, passing on a real PR
-- [ ] `Makefile`'s `test` target actually runs this suite instead of
+- [x] `Makefile`'s `test` target actually runs this suite instead of
       only printing the placeholder message
 
 ---
@@ -3341,7 +3364,7 @@ blocked by PX-032/PX-033/PX-034.
 | PX-028 | Build the "project services" Grafana dashboard | DONE |
 | PX-029 | Document two monitoring-stack quirks found via the new dashboard | DONE |
 | PX-030 | Correct PX-007/016/023: Proxmox memory gauge is a permanent upstream limitation | DONE |
-| PX-031 | pytest suite for landing/'s Prometheus-query logic | OPEN |
+| PX-031 | pytest suite for landing/'s Prometheus-query logic | DONE |
 | PX-032 | K8s manifest / Helm-values validation via kubeconform | OPEN |
 | PX-033 | Terraform native `terraform test` | OPEN |
 | PX-034 | Ansible Molecule tests for common/k3s-server/k3s-agent | OPEN |

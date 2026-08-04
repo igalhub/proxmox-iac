@@ -8,7 +8,12 @@ lint:
 	@if [ -d ansible ]; then ansible-lint ansible/; fi
 
 test:
-	@echo "No automated test suite yet — verification is terraform plan / ansible-lint / manual cluster checks (see docs/TICKETS.md QA steps per ticket)."
+	@if [ -d landing/tests ] && ls landing/tests/*.py >/dev/null 2>&1; then \
+		(cd landing && pytest -q); \
+	else \
+		echo "No landing/ test suite found"; \
+	fi
+	@echo "Terraform/Ansible/K8s verification is still terraform plan / ansible-lint / manual cluster checks (see docs/TICKETS.md QA steps per ticket) — PX-032/033/034/035 track automating those."
 
 install-hooks:
 	@mkdir -p .git/hooks

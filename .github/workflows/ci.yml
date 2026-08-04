@@ -110,3 +110,27 @@ jobs:
       - name: ruff check
         if: steps.check.outputs.present == 'true'
         run: ruff check landing/
+
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check for landing page tests
+        id: check
+        run: |
+          if [ -d landing/tests ] && compgen -G "landing/tests/*.py" > /dev/null; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "landing/tests/ not started yet, skipping"
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install dependencies
+        if: steps.check.outputs.present == 'true'
+        run: pip install -r landing/requirements.txt -r landing/requirements-dev.txt
+
+      - name: pytest
+        if: steps.check.outputs.present == 'true'
+        working-directory: landing
+        run: pytest -q
