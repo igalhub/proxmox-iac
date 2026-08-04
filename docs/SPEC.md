@@ -598,5 +598,41 @@ existing practice) remains the actual proof this one task works.
 **Same caveat as §14 applies here too:** this is real behavioral
 coverage of this repo's own role logic, not a substitute for the real
 cluster verification every VM-affecting ticket already does by hand —
-see `docs/TICKETS.md` PX-035 (not yet built) for the plan to codify
-that manual ritual into `scripts/verify-live-cluster.sh`.
+see §16 (PX-035) for that manual ritual, now codified into
+`scripts/verify-live-cluster.sh`.
+
+## 16. Live-cluster verification script (PX-035)
+
+**`scripts/verify-live-cluster.sh`** — codifies the same real-cluster
+verification every ticket in this project has run by hand since PX-001:
+all 3 nodes `Ready`, every ArgoCD Application `Synced`/`Healthy`, a
+defined set of ingress paths returning real `HTTP 200`, and Prometheus's
+`/api/v1/targets` showing no target down. Read-only and idempotent — no
+resource is ever created, changed, or deleted — and, deliberately,
+never wired into CI: no GitHub-hosted runner can reach this private
+network without a self-hosted runner (out of scope, its own security
+surface), and auto-triggering anything against the shared home-lab host
+would contradict the explicit-human-go-ahead rule this project has held
+for every state-changing action so far. Invoked by hand as part of a
+ticket's close-out, same discipline already practiced — just no longer
+memory-dependent or reinvented per ticket.
+
+**One real finding from writing this, not just wiring up checks — the
+ingress-path check almost shipped wrong:** the acceptance criteria
+called for a plain "returns `200`" check against each service's `/`,
+but that's not actually what a healthy service returns. Grafana
+redirects unauthenticated `/` to `/login` (`302`, correct behavior).
+Jenkins denies anonymous read on `/` (`403`) — confirmed via its own
+`X-Jenkins`/`X-Required-Permission` response headers that this is
+Jenkins itself answering correctly, not a broken ingress path or a
+misconfigured proxy. A naive "must be exactly 200" check against `/`
+would have reported both as failures on every single run, on a
+correctly functioning cluster — the kind of always-red check that
+trains a human to ignore the tool. Fixed by checking a genuinely
+unauthenticated-200 endpoint per service instead (Grafana's
+`/api/health`, Jenkins' `/login`), confirmed for real against the live
+cluster before and after the fix. Caught by actually running the script
+against the real cluster as this ticket's own verification step, not by
+reasoning about what "should" happen — the same discipline behind every
+other real-trigger check in this project (see e.g. §11's Alertmanager
+verification, `docs/TICKETS.md` PX-025).
