@@ -3386,6 +3386,48 @@ be the messiest.
       fast enough for CI; anything left manual is stated as such, not
       left ambiguous
 
+**Findings so far:**
+
+- **`common` role — fully passing.** Molecule scenario at
+  `ansible/roles/common/molecule/default/` converges, is idempotent
+  (`changed=0` on rerun), and verify checks all pass in CI
+  (`molecule-common` job). One task
+  (`Ensure qemu-guest-agent is enabled and running`) is tagged
+  `molecule-notest` — a service that genuinely cannot start inside a
+  test container, as predicted in this ticket's own description.
+- **`k3s-server` role — fully passing, one real fix required.** First
+  attempt hung 15+ minutes with no output (k3s's systemd unit ships
+  `TimeoutStartSec=0`, retries forever by design, so a real failure
+  looks identical to "still working"). Bounded the install task with
+  `async: 300` / `poll: 15` plus a `rescue` block that captures
+  `systemctl status k3s` and `journalctl -u k3s -n 100` on failure —
+  this is a permanent addition to
+  `ansible/roles/k3s-server/tasks/main.yml`, not test-only scaffolding,
+  since the same indefinite-hang risk exists on real installs too.
+  With that bound in place, the real captured error was:
+  `"overlayfs" snapshotter cannot be enabled ... failed to mount
+  overlay: ... invalid argument` — containerd's overlayfs snapshotter
+  cannot mount over the test container's own overlay2-backed rootfs
+  (Docker's default storage driver), a known nested-overlayfs
+  limitation (k3s-io/k3s#3266, containerd/containerd#5464). Fixed by
+  adding `--snapshotter=native` to `INSTALL_K3S_EXEC`, but scoped as a
+  new role variable, `k3s_server_extra_install_args` (default `""`,
+  documented in `ansible/roles/k3s-server/defaults/main.yml`), rather
+  than a permanent flag — real Proxmox VM installs aren't nested
+  containers and don't have this problem, and the native snapshotter is
+  slower/less space-efficient than the default, so production's
+  `INSTALL_K3S_EXEC` stays byte-for-byte unchanged. Only
+  `ansible/roles/k3s-server/molecule/default/converge.yml` overrides it
+  to `"--snapshotter=native"`. Rerun in CI completed cleanly: install
+  finished in ~45s (well inside the 5-minute bound), `rescued=0`
+  throughout, `molecule-k3s-server` job green
+  (run [30904714597](https://github.com/igalhub/proxmox-iac/actions/runs/30904714597)).
+  CI job kept.
+- **`k3s-agent` — not yet attempted.** Next up; its outcome is being
+  tested independently rather than inferred from k3s-server's pre-fix
+  failure, since the same nested-overlayfs fix may or may not be needed
+  there too.
+
 ---
 
 ## PX-035 — `scripts/verify-live-cluster.sh`: codify the manual live-cluster verification ritual
