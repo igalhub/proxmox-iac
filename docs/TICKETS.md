@@ -3887,20 +3887,32 @@ readability.
       restarted. `RESTORE_RUNBOOK.md` remains unverified against a
       real key-loss scenario; that can only be proven by a cp-1/wk-1
       loss or a full teardown, both out of scope here.
-- [ ] **Follow-up required before this ticket can close** (raised
-      2026-08-06, not yet actioned): fold the stale-node cleanup
-      (`kubectl delete node <name>` before rejoin) into either
-      `RESTORE_RUNBOOK.md` or the Ansible automation itself, so a
-      same-hostname rebuild doesn't require an undocumented manual
-      step next time. Decide + review with igalhub before implementing
-      — this is new scope discovered mid-ticket, not silently folded
-      into the existing commit.
-- [ ] Full runbook re-read end to end and confirmed it would actually
-      work for all 3 VMs, not just the one tested (this step still
-      applies once/if the live destroy test above is greenlit) — not
-      done: the stale-node follow-up above must land first, and the
-      sealed-secrets restore path itself remains unproven against a
-      real loss (see above)
+- [x] **Follow-up, raised 2026-08-06, now actioned:** a second,
+      identical-shape stale-identity issue was found while restoring
+      cluster health post-test — Longhorn's Node object for wk-2 cached
+      the *old* VM's disk UUID, blocking replica rebuild the same way
+      the stale k3s node blocked rejoin (`disks are unavailable: no
+      disks found on node wk-2`, `DiskFilesystemChanged`/`record
+      diskUUID doesn't match the one on the disk`). Both the k3s
+      stale-node/node-password fix and the Longhorn stale-disk-status
+      fix are now documented in `RESTORE_RUNBOOK.md` with the exact
+      symptom, diagnostic command, and fix sequence actually run for
+      each — deliberately kept as **manual, human-reviewed steps, not
+      automated**: both delete/disable live cluster state, and
+      misapplying either against a node not actually in this condition
+      risks real damage. Automating detection-only (flag the
+      condition, leave the fix to a human) is a reasonable future
+      idea, not part of this ticket.
+- [x] Full runbook re-read end to end, confirmed it would actually
+      work for all 3 VMs, not just wk-2: the two stale-identity fixes
+      are hostname-parameterized (`<hostname>`, `<disk-name>`), not
+      wk-2-specific, so they apply the same way to cp-1/wk-1 if either
+      is ever rebuilt. The sealed-secrets restore steps (1-5) were
+      never mechanically exercised against a real key loss in this
+      test (see above — the controller lives on wk-1, untouched) but
+      remain unchanged from the original write-up, which was checked
+      against the real controller/Secret/label names at the time it
+      was written.
 - [x] `docs/SPEC.md` gets a short pointer (not the key material itself)
       noting this backup exists and where, so a future rebuild isn't
       reconstructed from memory
