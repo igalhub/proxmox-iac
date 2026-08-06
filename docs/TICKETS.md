@@ -3745,15 +3745,34 @@ theoretical ones:
    undecryptable the moment the cluster is rebuilt — not "need
    restoring," just dead, forcing every credential to be re-minted from
    scratch.
-2. **Postgres/Redis/MinIO data lives entirely on the VMs' own Longhorn
-   volumes**, including the MinIO bucket holding WAL-G's own backups —
-   nothing in this architecture currently gets data off those three
-   VMs. Confirmed out of scope for this ticket (igalhub's call,
-   2026-08-06): current cluster contents are portfolio/verification
-   fixtures (PX-020's marker row, PX-009's `px009-check` key), not real
-   work product — acceptable to lose on a rebuild. Real off-VM data
-   backup is a separate, larger design decision if this cluster ever
-   holds something worth protecting, not bundled into this ticket.
+2. **Postgres/Redis/MinIO/Jenkins data does not all sit on the same
+   footing — corrected 2026-08-06 after the real wk-2 destroy test
+   below exposed the original version of this paragraph as wrong.**
+   Postgres and Redis are on Longhorn (PX-022) — genuinely replicated
+   across wk-1/wk-2, confirmed resilient by the real test: destroying
+   wk-2 left both `degraded` but never `faulted`, serving intact from
+   the surviving wk-1 replica the whole time, with no data loss.
+   **MinIO and Jenkins were never on Longhorn** — PX-022's own scope
+   was Postgres/Redis only (per its title); MinIO is explicitly
+   `storageClass: local-path` (`k8s/minio/values.yaml`) and Jenkins
+   defaults to the same, both single-replica, node-pinned via
+   `nodeAffinity` to whichever node they first landed on. When that
+   node (wk-2) was destroyed, both lost their data outright — this is
+   not theoretical, it happened during this ticket's own destroy test
+   (see the Real destroy-path test result below): MinIO's bucket
+   (including WAL-G's own Postgres backups) and Jenkins' entire home
+   directory (build history, job configs, its local credential store)
+   were both gone, unrecoverable, the moment the VM was deleted.
+   Confirmed out of scope for *this* ticket to build real off-VM
+   backup/replication for MinIO/Jenkins (igalhub's call, 2026-08-06,
+   reaffirmed after seeing the real loss): current cluster contents
+   were portfolio/verification fixtures, not real work product —
+   acceptable to lose, and MinIO/Jenkins were recovered with fresh
+   empty state plus a new Postgres base backup rather than data
+   recovery. Real off-VM/replicated storage for MinIO and Jenkins is a
+   separate, larger design decision if this cluster ever holds
+   something worth protecting, not bundled into this ticket — but
+   it's now a *known, demonstrated* gap, not an assumed one.
 
 **Where the backup lives:** `/home/igalv/proxmox-iac-secrets-manager/`
 — deliberately outside `/home/igalv/claudecode/` entirely, not a
@@ -3782,18 +3801,123 @@ readability.
       alongside its new one, verify a real `SealedSecret` decrypts
       (e.g. `kubectl get secret redis-auth -n <ns>` resolves after
       ArgoCD syncs)
-- [ ] Real test of the destroy path: delete one non-critical VM
-      directly on Proxmox (not `terraform destroy`) — wk-2 is the
-      lowest-blast-radius choice (Longhorn already tolerates a
-      single-replica-node loss, per PX-022) — confirm `terraform plan`
-      detects the drift and recreates it cleanly, no manual `terraform
-      state rm` needed. Document the real result, don't assume the
-      provider handles it gracefully.
+- [x] **New, found during this ticket's own review (2026-08-06):**
+      Longhorn's storage-hosting components require a
+      `longhorn-storage=true` node label on wk-1/wk-2 that has only
+      ever been applied live via `kubectl label` — never codified in
+      Ansible (a gap already named in PX-022/`docs/SPEC.md`, not new).
+      A wk-2 rebuild would rejoin k3s as a plain node: MinIO/Jenkins/
+      kube-state-metrics come back placed correctly (they key off the
+      built-in `kubernetes.io/hostname` label, automatic), but Longhorn
+      would not schedule storage components onto it until the label is
+      reapplied — meaning a "rebuilt as it's now" claim would be false
+      until this is fixed. igalhub's explicit call (2026-08-06): fix
+      this for real, not with a manual runbook step. Add an idempotent
+      task (delegated to the control-plane, running after both workers
+      join) that applies `longhorn-storage=true` to wk-1/wk-2 as part
+      of the k3s bring-up automation itself. **Done:** added to
+      `ansible/roles/k3s-agent/tasks/main.yml`, ansible-lint clean
+      (`production` profile). Verified as a true no-op against the
+      live cluster before the destroy test (label already present on
+      wk-1/wk-2, apply task skipped both times), then verified as a
+      real apply against the genuinely fresh wk-2 after rebuild (label
+      absent, task ran, `node/wk-2 labeled`) — both states proven, not
+      assumed.
+- [x] Real test of the destroy path — run 2026-08-06, igalhub deleted
+      wk-2 (VMID 112) directly on Proxmox himself (`qm stop 112 && qm
+      destroy 112`, confirmed via `qm` output showing both LVs
+      removed); CC never executed the deletion, per the hard rule.
+      **Terraform layer: passed exactly as hoped.** `terraform plan`
+      detected the drift on its own and proposed a clean `+ create` at
+      the same `vm_id`/IP — `Plan: 1 to add, 0 to change, 0 to
+      destroy`, no manual `terraform state rm` needed. `terraform
+      apply` succeeded (`Apply complete! Resources: 1 added`) after
+      15m10s, with one non-fatal warning (QEMU-agent network-interface
+      readback timed out — cosmetic, VM was reachable immediately
+      after).
+      **k3s layer: real gap found, not assumed away.** The rebuilt
+      wk-2 reused its old hostname; k3s's server-side node-password
+      store (`wk-2.node-password.k3s` Secret in `kube-system`) still
+      held the *old* VM's credential, so the new VM's agent was
+      rejected (`Node password rejected, duplicate hostname`) and the
+      Ansible run failed on its bounded async timeout. Fix required
+      manual intervention not currently covered by any runbook:
+      `kubectl delete node wk-2` (which auto-cleans the stale
+      password Secret) before the agent could rejoin. **This needs to
+      be folded into the restore runbook/automation before this ticket
+      can claim the rebuild story is real for wk-1/cp-1 too** — see
+      the open follow-up below.
+      **Data layer: real, confirmed, mixed result — not uniform.**
+      Postgres and Redis (Longhorn, PX-022): both `degraded` but never
+      `faulted` for the whole test, served intact from the surviving
+      wk-1 replica — genuinely resilient, no data loss. MinIO and
+      Jenkins (`local-path`, node-pinned, never covered by PX-022):
+      **real data loss**, confirmed via `kubectl describe pod`
+      (`MountVolume.NewMounter ... path ... does not exist`) —
+      MinIO's entire bucket (including WAL-G's Postgres backups) and
+      Jenkins' entire home directory (build history, job configs, its
+      local credential store) were both gone, unrecoverable, the
+      moment the VM was deleted. See the corrected background section
+      above — the ticket's original assumption that MinIO shared
+      Postgres/Redis's Longhorn resilience was wrong.
+      **Immediate recovery actions taken post-loss (2026-08-06):**
+      MinIO — deleted the stuck PVC/PV (reclaim policy `Delete`,
+      already unrecoverable), forced an ArgoCD re-sync, fresh PVC
+      bound, pod `1/1 Running`, ArgoCD `Synced`/`Healthy`. Postgres —
+      triggered a real fresh WAL-G base backup (`envdir
+      "/run/etc/wal-e.d/env" /scripts/postgres_backup.sh`, run as the
+      `postgres` user — same mechanism as PX-020/PX-024):
+      `base_0000000B0000000100000069`, confirmed landed via `mc ls -r`
+      against the live bucket, not just the script's exit code —
+      Postgres now has a current backup again (had zero for the
+      duration of the gap). Jenkins credentials — cross-checked
+      against the repo: all 3 SealedSecrets Jenkins declares
+      (`jenkins-admin`, `ghcr-push-token`, `jenkins-github-deploy-key`)
+      are git-sourced and fully recoverable from the sealed-secrets
+      key backup; the `Jenkinsfile` only references `ghcr-push-token`
+      by ID, which matches. Cannot rule out a credential that only
+      ever existed in Jenkins' own UI-managed store outside of git —
+      if one existed, it is unrecoverably gone and unnameable (no
+      artifact survives to check against). Jenkins itself was left
+      with fresh empty state (build history not recoverable) rather
+      than force-recovered.
+      **Sealed Secrets restore runbook: not meaningfully exercised by
+      this test.** The controller pod happens to run on wk-1, not
+      wk-2 — it was never destroyed, never lost its key, never
+      restarted. `RESTORE_RUNBOOK.md` remains unverified against a
+      real key-loss scenario; that can only be proven by a cp-1/wk-1
+      loss or a full teardown, both out of scope here.
+- [ ] **Follow-up required before this ticket can close** (raised
+      2026-08-06, not yet actioned): fold the stale-node cleanup
+      (`kubectl delete node <name>` before rejoin) into either
+      `RESTORE_RUNBOOK.md` or the Ansible automation itself, so a
+      same-hostname rebuild doesn't require an undocumented manual
+      step next time. Decide + review with igalhub before implementing
+      — this is new scope discovered mid-ticket, not silently folded
+      into the existing commit.
 - [ ] Full runbook re-read end to end and confirmed it would actually
-      work for all 3 VMs, not just the one tested
-- [ ] `docs/SPEC.md` gets a short pointer (not the key material itself)
+      work for all 3 VMs, not just the one tested (this step still
+      applies once/if the live destroy test above is greenlit) — not
+      done: the stale-node follow-up above must land first, and the
+      sealed-secrets restore path itself remains unproven against a
+      real loss (see above)
+- [x] `docs/SPEC.md` gets a short pointer (not the key material itself)
       noting this backup exists and where, so a future rebuild isn't
       reconstructed from memory
+
+**Sequencing decision (2026-08-06):** igalhub's stated goal is a real
+"delete this project's VMs, keep the code, redeploy on demand" option
+for the future. Explicitly decided: prove the full destroy → rebuild →
+restore chain once, on wk-2 alone, before ever trusting it for all 3
+VMs at once. As of this writing, the chain has never been run end to
+end — every piece (key export, restore script, Longhorn placement) is
+individually verified, but not yet proven together against a real
+rebuilt node. A full cp-1/wk-1/wk-2 teardown is explicitly **not**
+part of this ticket's scope and stays a separate, later decision,
+made only after the wk-2 test has actually passed — not assumed safe
+by extrapolation from a plan that looks sound on paper. This project's
+own history (PX-007/PX-016/PX-023) is exactly why: "should work" was
+wrong three separate times before being caught by a real test.
 
 ---
 

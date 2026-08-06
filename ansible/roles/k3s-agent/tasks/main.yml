@@ -54,3 +54,31 @@
     - name: Re-raise the original failure
       ansible.builtin.fail:
         msg: "k3s-agent install did not complete within the bounded async window - see diagnostics above"
+
+# Longhorn's storage-hosting components are restricted to wk-1/wk-2 via
+# this label (k8s/longhorn/values.yaml), which until PX-039 had only
+# ever been applied by hand (`kubectl label node wk-1/wk-2
+# longhorn-storage=true`) — a rebuilt worker would silently rejoin
+# without it and never host storage again. Delegated to the
+# control-plane (kubectl / the k3s.yaml kubeconfig live there, not on
+# the worker) and run after this worker has joined and gone Ready, so
+# the label lands on a node the API server already knows about.
+- name: Wait for this node to register as Ready in the k3s API
+  delegate_to: "{{ groups['k3s_control_plane'][0] }}"
+  ansible.builtin.command:
+    cmd: "kubectl wait --for=condition=Ready node/{{ inventory_hostname }} --timeout=120s"
+  changed_when: false
+
+- name: Check current longhorn-storage label on this node
+  delegate_to: "{{ groups['k3s_control_plane'][0] }}"
+  ansible.builtin.command:
+    cmd: "kubectl get node {{ inventory_hostname }} -o jsonpath={.metadata.labels.longhorn-storage}"
+  register: k3s_longhorn_storage_label
+  changed_when: false
+
+- name: Apply longhorn-storage=true label for Longhorn storage placement (PX-039)
+  delegate_to: "{{ groups['k3s_control_plane'][0] }}"
+  ansible.builtin.command:
+    cmd: "kubectl label node {{ inventory_hostname }} longhorn-storage=true --overwrite"
+  when: k3s_longhorn_storage_label.stdout != "true"
+  changed_when: true
