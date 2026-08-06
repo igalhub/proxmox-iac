@@ -3722,7 +3722,7 @@ or share this class of gap.
 
 ## PX-039 — Clean-slate VM rebuild: back up what a fresh cluster can't regenerate on its own
 
-**Status:** OPEN
+**Status:** DONE
 
 **Background:** igalhub asked what actually happens if cp-1/wk-1/wk-2
 are destroyed on Proxmox (deleted directly, not necessarily via
@@ -3786,21 +3786,24 @@ files once created — cheap, closes off other-local-user/process
 readability.
 
 **Acceptance criteria:**
-- [ ] `/home/igalv/proxmox-iac-secrets-manager/` created with correct
-      permissions
-- [ ] Real sealed-secrets controller key exported (`kubectl -n
+- [x] `/home/igalv/proxmox-iac-secrets-manager/` created with correct
+      permissions (`700`, confirmed via `stat` 2026-08-06)
+- [x] Real sealed-secrets controller key exported (`kubectl -n
       kube-system get secret -l
       sealedsecrets.bitnami.com/sealed-secrets-key -o yaml`) and saved
-      there
-- [ ] A short credential inventory saved alongside it: where
+      there (`sealed-secrets-key-backup.yaml`, `600`, 1 Secret,
+      confirmed present 2026-08-06)
+- [x] A short credential inventory saved alongside it: where
       `terraform.tfvars` (Proxmox API token) and `~/.ssh/homelab` (SSH
       private key) live — by reference, not duplicated
-- [ ] A restore script/runbook written and saved there: apply the
+      (`CREDENTIAL_INVENTORY.md`, `600`, confirmed present 2026-08-06)
+- [x] A restore script/runbook written and saved there: apply the
       backed-up key Secret into a fresh cluster's `kube-system`,
       restart the sealed-secrets controller pod so it loads the old key
       alongside its new one, verify a real `SealedSecret` decrypts
       (e.g. `kubectl get secret redis-auth -n <ns>` resolves after
-      ArgoCD syncs)
+      ArgoCD syncs) (`RESTORE_RUNBOOK.md` + `restore-sealed-secrets-key.sh`,
+      shellcheck-clean, confirmed present 2026-08-06)
 - [x] **New, found during this ticket's own review (2026-08-06):**
       Longhorn's storage-hosting components require a
       `longhorn-storage=true` node label on wk-1/wk-2 that has only
@@ -3975,4 +3978,4 @@ wrong three separate times before being caught by a real test.
 | PX-036 | INTERVIEW_WALKTHROUGH.md — write the missing Step 15 (PX-026/PX-028) | DONE |
 | PX-037 | Fix flaky Molecule idempotence: get_url against get.k3s.io reports changed every rerun | DONE |
 | PX-038 | Jenkins Ansible Lint stage broken since PX-034 — missing ANSIBLE_ROLES_PATH | DONE |
-| PX-039 | Clean-slate VM rebuild: back up sealed-secrets key + credential inventory | OPEN |
+| PX-039 | Clean-slate VM rebuild: back up sealed-secrets key + credential inventory | DONE |
