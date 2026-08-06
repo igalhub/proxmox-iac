@@ -3720,6 +3720,83 @@ or share this class of gap.
 
 ---
 
+## PX-039 — Clean-slate VM rebuild: back up what a fresh cluster can't regenerate on its own
+
+**Status:** OPEN
+
+**Background:** igalhub asked what actually happens if cp-1/wk-1/wk-2
+are destroyed on Proxmox (deleted directly, not necessarily via
+`terraform destroy`) and the repo is used to rebuild. Investigated
+directly against this repo's own real state (not assumed):
+`terraform`/Ansible/ArgoCD fully reconstruct the architecture from git
+alone — VMs, k3s, every Helm-sourced Application. Two things do not
+survive a VM-level destroy and were confirmed as real gaps, not
+theoretical ones:
+
+1. **Sealed Secrets' private key lives only inside the cluster.** The
+   controller (`kube-system`, confirmed live via
+   `kubectl -n kube-system get secret -l
+   sealedsecrets.bitnami.com/sealed-secrets-key` — the same command
+   already verified working in PX-015) generates a fresh keypair on
+   every reinstall. Without the old key restored, all 10 committed
+   `SealedSecret` files in this repo (Postgres backup creds, Redis
+   auth, Grafana/Jenkins admin passwords, the GHCR token, the Telegram
+   bot token, ArgoCD's own GitHub deploy key) become permanently
+   undecryptable the moment the cluster is rebuilt — not "need
+   restoring," just dead, forcing every credential to be re-minted from
+   scratch.
+2. **Postgres/Redis/MinIO data lives entirely on the VMs' own Longhorn
+   volumes**, including the MinIO bucket holding WAL-G's own backups —
+   nothing in this architecture currently gets data off those three
+   VMs. Confirmed out of scope for this ticket (igalhub's call,
+   2026-08-06): current cluster contents are portfolio/verification
+   fixtures (PX-020's marker row, PX-009's `px009-check` key), not real
+   work product — acceptable to lose on a rebuild. Real off-VM data
+   backup is a separate, larger design decision if this cluster ever
+   holds something worth protecting, not bundled into this ticket.
+
+**Where the backup lives:** `/home/igalv/proxmox-iac-secrets-manager/`
+— deliberately outside `/home/igalv/claudecode/` entirely, not a
+connected/mounted folder for either Claude session working on this
+project. Holds the sealed-secrets key export, the runbook, and the
+restore script together, not split across locations — consistent with
+how this repo already treats `terraform.tfvars` (plaintext, gitignored,
+never in git), not held to a stricter standard than the Proxmox token
+that unlocks the whole host. `chmod 700` the directory / `600` the
+files once created — cheap, closes off other-local-user/process
+readability.
+
+**Acceptance criteria:**
+- [ ] `/home/igalv/proxmox-iac-secrets-manager/` created with correct
+      permissions
+- [ ] Real sealed-secrets controller key exported (`kubectl -n
+      kube-system get secret -l
+      sealedsecrets.bitnami.com/sealed-secrets-key -o yaml`) and saved
+      there
+- [ ] A short credential inventory saved alongside it: where
+      `terraform.tfvars` (Proxmox API token) and `~/.ssh/homelab` (SSH
+      private key) live — by reference, not duplicated
+- [ ] A restore script/runbook written and saved there: apply the
+      backed-up key Secret into a fresh cluster's `kube-system`,
+      restart the sealed-secrets controller pod so it loads the old key
+      alongside its new one, verify a real `SealedSecret` decrypts
+      (e.g. `kubectl get secret redis-auth -n <ns>` resolves after
+      ArgoCD syncs)
+- [ ] Real test of the destroy path: delete one non-critical VM
+      directly on Proxmox (not `terraform destroy`) — wk-2 is the
+      lowest-blast-radius choice (Longhorn already tolerates a
+      single-replica-node loss, per PX-022) — confirm `terraform plan`
+      detects the drift and recreates it cleanly, no manual `terraform
+      state rm` needed. Document the real result, don't assume the
+      provider handles it gracefully.
+- [ ] Full runbook re-read end to end and confirmed it would actually
+      work for all 3 VMs, not just the one tested
+- [ ] `docs/SPEC.md` gets a short pointer (not the key material itself)
+      noting this backup exists and where, so a future rebuild isn't
+      reconstructed from memory
+
+---
+
 ## Ticket status
 
 | Ticket | Title | Status |
@@ -3762,3 +3839,4 @@ or share this class of gap.
 | PX-036 | INTERVIEW_WALKTHROUGH.md — write the missing Step 15 (PX-026/PX-028) | DONE |
 | PX-037 | Fix flaky Molecule idempotence: get_url against get.k3s.io reports changed every rerun | DONE |
 | PX-038 | Jenkins Ansible Lint stage broken since PX-034 — missing ANSIBLE_ROLES_PATH | DONE |
+| PX-039 | Clean-slate VM rebuild: back up sealed-secrets key + credential inventory | OPEN |

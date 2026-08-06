@@ -157,6 +157,8 @@ Jenkins is explicitly called out as the heaviest *single component* (JVM baselin
 
 No Vault in this repo (that story lives in `vault-secrets-demo`). Because ArgoCD pulls from Git, anything committed must not be plaintext. Plan: **Sealed Secrets** (Bitnami) — a controller in-cluster holds a private key; `kubeseal` encrypts a Secret client-side into a `SealedSecret` CR that's safe to commit; only the in-cluster controller can decrypt it back into a real Secret. This is the lightest-weight mechanism that still makes "secrets in a GitOps repo" a defensible answer in an interview, without pulling in a second portfolio project's subject matter.
 
+**Disaster recovery gap (PX-039):** the controller's private key lives only inside the cluster and is regenerated on every reinstall — a VM-level rebuild (Terraform/Ansible/ArgoCD reconstruct everything else from git) would otherwise leave all 10 committed `SealedSecret` files permanently undecryptable. A backup of the key, a credential-location inventory, and a restore runbook/script are kept at `/home/igalv/proxmox-iac-secrets-manager/`, deliberately outside this repo and outside any Claude-connected folder — not the key material itself, just a pointer to where it lives.
+
 ---
 
 ## 7. Backup & disaster recovery (Postgres)
