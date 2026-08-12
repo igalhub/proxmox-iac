@@ -41,5 +41,5 @@ The bar for "done" isn't "it runs." It's "I can defend every decision in this re
 ## Constraints
 
 - Hardware: single Beelink SER mini PC, AMD Ryzen 5 5600H (6c/12t), 27Gi RAM confirmed live (see `docs/SPEC.md` §3), no GPU. All sizing decisions, including the now in-cluster Prometheus/Grafana, must fit inside the ~5GB headroom remaining after the 3 VMs' allocation — there is no separate pre-existing monitoring VM to share the budget with anymore.
-- Repo starts private; standard doc/branching conventions apply (see root `README.md` and `CLAUDE.md`).
+- Repo started private, made public 2026-08-12 (PX-017); standard doc/branching conventions apply (see root `README.md` and `CLAUDE.md`).
 - Build order is fixed and agreed (see `docs/SPEC.md` §Build Order) — no skipping ahead to GitOps or Jenkins before the cluster itself is stable.

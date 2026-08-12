@@ -295,15 +295,18 @@ GitHub's own UI, not trusted from a console log line.
 a CI credential":** getting Jenkins a `ghcr.io` push credential surfaced
 two real GitHub constraints, found by hitting them, not read in
 advance — fine-grained PATs don't support container-registry package
-operations at all; classic PATs need the full `repo` scope alongside
-`write:packages` specifically *because the repo is private* (GitHub
-couples package-write to full repo access for private repos). Accepted
-as a named trade-off (`docs/TICKETS.md` PX-014), with a follow-up
-ticket (PX-017) to narrow it back down once the repo goes public and
-that coupling no longer applies. "I hit a real platform constraint,
-named the trade-off, and left a tracked path back to least-privilege"
-is a materially better answer than pretending the token was scoped
-perfectly from the start.
+operations at all; classic PATs' own token-creation UI auto-selects the
+full `repo` scope the moment `write:packages` is checked. Originally
+misattributed to the repo being private (`docs/TICKETS.md` PX-014);
+**corrected by PX-017**, now done: this is an unconditional UI default
+for classic PATs, confirmed via GitHub's own docs, not something that
+depends on repo or package visibility at all — GitHub documents a
+bypass, a token-creation URL with the scopes pre-filled
+(`/settings/tokens/new?scopes=write:packages,read:packages`), which is
+how the token was actually narrowed to packages-only. "I hit a real
+platform constraint, initially misdiagnosed its cause, then corrected
+that with the vendor's own docs before acting on it" is a materially
+better answer than pretending the first explanation was right.
 
 Its purpose is explicitly dual: a real (if small) piece of software
 running in the stack, and the visual "proof of life" to screen-share in

@@ -132,16 +132,21 @@ storing it as plaintext. Full pipeline trigger/agent-strategy trail in
 | ghcr.io pull secret | `landing-page` | `kubectl apply -f k8s/landing-page/ghcr-pull-sealedsecret.yaml` — same PAT, sealed as a `kubernetes.io/dockerconfigjson` secret, referenced via `imagePullSecrets` in the Deployment. Reused deliberately rather than minting a second token: classic PATs can't be scoped narrower than repo-unscoped anyway, so a second token wouldn't shrink the actual blast radius, just add a secret to track |
 | Landing page namespace/Service/Ingress/Deployment | `landing-page` | `kubectl apply -f k8s/landing-page/` (namespace, service, ingress, deployment) |
 
-**Why a pull secret instead of a public package:** the `ghcr.io`
-package defaults to private (inherits the repo's visibility). Considered
-making it public instead — simpler, no pull secret — but decided to
-keep it private and wire in `imagePullSecrets`. Before deciding, checked
+**Why a pull secret instead of a public package (as originally decided
+at PX-014):** the `ghcr.io` package defaulted to private (inherits the
+repo's visibility, which was private at the time). Considered making it
+public instead — simpler, no pull secret — but decided to keep it
+private and wire in `imagePullSecrets`. Before deciding, checked
 `landing/Dockerfile` and the complete file list under `landing/`
 line-by-line: only `requirements.txt`, `main.py`, `templates/index.html`
 ever get `COPY`'d in, no `ARG`/`ENV` secrets, no `.env`, no credentials
 of any kind baked into any layer — so either choice would have been
 safe from a content standpoint; private + pull secret was chosen anyway
-as the more conservative default.
+as the more conservative default. **Update (PX-017):** both the repo
+and this package are now public — the pull secret is kept in place
+regardless (still the correct mechanism, just no longer strictly
+required for a public package) rather than unwound as a separate,
+unscoped change.
 
 Reachable at `http://status.lab.test`. Verified end-to-end, not just
 "pod applied": real pod `Running` on `wk-1`, pulled from the private
