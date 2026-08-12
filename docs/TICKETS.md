@@ -1501,56 +1501,85 @@ trail: `docs/TICKETS.md` PX-030.
 
 ## PX-017 — Narrow the ghcr.io push token's scope once the repo is public
 
-**Status:** OPEN — not blocking, no urgency; depends entirely on Igal's
-own separate decision to make `igalhub/proxmox-iac` public.
+**Status:** OPEN — repo is now public and the token has been narrowed;
+still needs a real Jenkins pipeline run to confirm the push actually
+works before this closes.
 
 **Background:** PX-014 needed a classic GitHub PAT to let Jenkins push
 the landing page image to `ghcr.io`. Real, hands-on investigation during
 that ticket (not assumed) found: fine-grained PATs don't support GHCR
 package operations at all, and classic PATs require the full `repo`
-scope alongside `write:packages`/`read:packages` *specifically because
-the repo is private* — GitHub couples package write access to full repo
-access for private repos. The token currently in use
+scope alongside `write:packages`/`read:packages`. At the time this was
+attributed to *the repo being private* — GitHub coupling package write
+access to full repo access for private repos. The token in use
 (`k8s/jenkins/jenkins-ghcr-sealedsecret.yaml`'s underlying PAT, named
 "proxmox-iac ghcr push (PX-014)" in GitHub's token settings) therefore
-has full read/write access to every private repo on the account, not
+had full read/write access to every private repo on the account, not
 just packages — a materially bigger blast radius than the ticket's own
 least-privilege intent, accepted at the time as a named, deliberate
 trade-off (same pattern as PX-006's Terraform state decision) pending
 this follow-up.
 
-**The fix, once the repo goes public:** the `repo`-scope requirement is
-specifically a private-repo behavior — once `igalhub/proxmox-iac` is
-public, `write:packages`/`read:packages` should stand alone without
-needing `repo` at all. At that point:
+**Correction, found 2026-08-12: the private-repo premise was wrong.**
+`igalhub/proxmox-iac` was made public, and the GHCR package itself
+(`proxmox-iac-landing`) was also flipped from private to public
+(container package visibility is a separate setting from repo
+visibility — the repo going public does *not* make its packages
+public). Even with both public, the token-edit page's checkbox UI still
+auto-selected and greyed out `repo` the moment `write:packages` was
+checked. Confirmed via GitHub's own docs
+(docs.github.com, packages/working-with-a-github-packages-registry):
+*"By default, when you select the write:packages scope for your
+personal access token (classic) in the user interface, the repo scope
+will also be selected... we recommend you avoid using [repo] for GitHub
+Actions workflows in particular."* — this is an unconditional UI
+default for classic PATs, not something that depends on repo/package
+visibility at all. GitHub documents a bypass: a direct token-creation
+URL with the scopes pre-filled skips the auto-select entirely:
+`https://github.com/settings/tokens/new?scopes=write:packages,read:packages`.
 
-1. Go to `https://github.com/settings/tokens`, find "proxmox-iac ghcr
-   push (PX-014)", **Edit**.
-2. Deselect the whole `repo` scope (and all its children) — leave only
-   `write:packages` and `read:packages` checked.
-3. Save. No new token, no re-sealing needed — narrowing an *existing*
-   token's scopes doesn't change its value, so the already-sealed
-   secrets (`k8s/jenkins/jenkins-ghcr-sealedsecret.yaml` and
-   `k8s/landing-page/ghcr-pull-sealedsecret.yaml`) keep working
-   unmodified.
-4. Confirm Jenkins can still push after the next real pipeline run
-   (build result `SUCCESS`, image tag pushed) — verify the narrowed
-   token actually still works, don't assume removing `repo` scope was
-   side-effect-free.
+**What was actually done (2026-08-12):**
+1. `igalhub/proxmox-iac` confirmed public.
+2. `proxmox-iac-landing` GHCR package visibility flipped to public
+   (Package settings → Danger Zone) — a real, separate prerequisite the
+   original ticket text missed entirely.
+3. A **new** token generated via the bypass URL above (`write:packages`,
+   `read:packages` only, `repo` absent) — the old broad-scope
+   "proxmox-iac ghcr push (PX-014)" token was **revoked**, not narrowed
+   in place, since the edit-page route to a packages-only scope doesn't
+   exist for classic PATs. This means, contrary to the original plan,
+   re-sealing *was* required.
+4. Both `k8s/jenkins/jenkins-ghcr-sealedsecret.yaml` (username `igalhub`
+   + new PAT, `usernamePassword` Jenkins credential) and
+   `k8s/landing-page/ghcr-pull-sealedsecret.yaml` (`dockerconfigjson`
+   pull secret, same credentials) re-sealed with the new token via
+   `kubeseal`, targeting the live `sealed-secrets` controller in
+   `kube-system`. Confirmed `encryptedData` actually changed in both
+   (not a no-op re-run) and validated via
+   `kubectl apply --dry-run=server` against the live cluster before
+   committing — both SealedSecrets accepted by the real controller.
+5. **Incident during this work:** the new PAT was briefly pasted into
+   plaintext in a chat session while attempting to hand it to a
+   multi-line shell command that failed to parse (line-continuation
+   mishandled by the terminal). Treated as compromised immediately:
+   revoked on the spot, a second replacement token generated the same
+   way, and the re-sealing redone using `read -rs` to keep the token
+   out of shell history and off the command line entirely. The token
+   currently sealed into the repo is the *second* replacement, not the
+   one that was briefly exposed.
 
-**Also worth re-checking at that point (not a separate ticket):**
-whether GitHub's fine-grained PAT "Packages" permission has become
-available for public repos by then — PX-014 confirmed it wasn't
-available for a private repo at the time, but that was never tested
-against a public one. If it's available, a fine-grained token scoped to
-just this repo would be strictly better than a narrowed classic token
-and worth switching to instead of stopping at step 3 above.
+**Still open — not yet done:** a real Jenkins pipeline run against the
+new, narrowed-scope token hasn't happened yet. Until that returns a
+`SUCCESS` build with a real image pushed, this ticket does not close —
+matching the ticket's own standing rule against assuming "the scopes
+look right" is the same as "the push works."
 
 **Acceptance criteria:**
-- [ ] `igalhub/proxmox-iac` confirmed public (prerequisite, owned by
+- [x] `igalhub/proxmox-iac` confirmed public (prerequisite, owned by
       Igal, not this ticket)
-- [ ] `repo` scope removed from the existing PAT via GitHub's token
-      settings, `write:packages`/`read:packages` retained
+- [x] `repo` scope removed — via a new packages-only token (bypass URL),
+      not an in-place edit of the old token as originally planned; old
+      broad-scope token revoked, both SealedSecrets re-sealed
 - [ ] A real pipeline run after the change confirms the push still
       works — not assumed from "the scopes look right"
 - [ ] Checked whether a fine-grained, single-repo-scoped token is now
