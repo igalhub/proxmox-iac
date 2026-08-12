@@ -18,6 +18,9 @@ crash.*.log
 *.retry
 .vault_pass
 .kubeconfig
+# ansible.cfg's roles_path/collections cache — empty today, but nothing
+# else stops git from picking up content here if it's ever populated.
+.ansible/
 
 # General
 .DS_Store
