@@ -34,6 +34,7 @@ scripts/      # host scripts (cloud-init template build), CI-wired manifest/Helm
 hooks/        # tracked pre-commit hook source
 .github/      # CI workflows
 .claude/      # Claude Code adapter scripts (dev-check.sh)
+jenkins/      # codified Jenkins job config (jobs/proxmox-iac-ci/config.xml + restore runbook, PX-040)
 Jenkinsfile   # CI pipeline run by the in-cluster Jenkins (PX-013)
 ```
 
@@ -69,7 +70,15 @@ section below and `docs/SPEC.md` §14-15. `scripts/verify-live-cluster.sh`
 (PX-035) codifies the one check that can't run in CI — nodes `Ready`,
 ArgoCD Applications `Synced`/`Healthy`, ingress paths live, Prometheus
 targets up — invoked by hand as part of a ticket's close-out
-(`docs/SPEC.md` §16). Live progress: `docs/TICKETS.md`.
+(`docs/SPEC.md` §16). The Jenkins CI pipeline's own `Ansible Lint` stage
+was fixed (PX-038, missing `ANSIBLE_ROLES_PATH`), the Sealed Secrets
+controller's private key is now backed up with a tested restore runbook
+covering a real wk-2 destroy/rebuild test (PX-039, `docs/SPEC.md` §6),
+the ghcr.io push token is narrowed to packages-only scope now that the
+repo is public (PX-017), and the Jenkins `proxmox-iac-ci` job — lost
+entirely in PX-039's real data-loss test — has been recreated and
+codified (`jenkins/jobs/proxmox-iac-ci/`, PX-040) so it can't silently
+vanish again. Live progress: `docs/TICKETS.md`.
 
 ## Setup
 
@@ -117,4 +126,4 @@ new phase lands.
 
 ## License
 
-Private — not licensed for reuse or redistribution.
+Public repository, not licensed for reuse or redistribution.

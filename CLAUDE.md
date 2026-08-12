@@ -33,6 +33,7 @@ scripts/      # host scripts (cloud-init template build), CI-wired manifest/Helm
 hooks/        # tracked pre-commit hook source (installed via `make install-hooks`)
 .github/      # CI workflows
 .claude/      # Claude Code adapter scripts (dev-check.sh)
+jenkins/      # codified Jenkins job config (jobs/proxmox-iac-ci/config.xml + restore runbook, PX-040)
 Jenkinsfile   # CI pipeline run by the in-cluster Jenkins (PX-013)
 ```
 
