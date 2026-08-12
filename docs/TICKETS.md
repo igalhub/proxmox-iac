@@ -1501,9 +1501,7 @@ trail: `docs/TICKETS.md` PX-030.
 
 ## PX-017 — Narrow the ghcr.io push token's scope once the repo is public
 
-**Status:** OPEN — repo is now public and the token has been narrowed;
-still needs a real Jenkins pipeline run to confirm the push actually
-works before this closes.
+**Status:** DONE — closed out 2026-08-12, after PX-040 unblocked it.
 
 **Background:** PX-014 needed a classic GitHub PAT to let Jenkins push
 the landing page image to `ghcr.io`. Real, hands-on investigation during
@@ -1568,11 +1566,17 @@ URL with the scopes pre-filled skips the auto-select entirely:
    currently sealed into the repo is the *second* replacement, not the
    one that was briefly exposed.
 
-**Still open — not yet done:** a real Jenkins pipeline run against the
-new, narrowed-scope token hasn't happened yet. Until that returns a
-`SUCCESS` build with a real image pushed, this ticket does not close —
-matching the ticket's own standing rule against assuming "the scopes
-look right" is the same as "the push works."
+**Blocked, then unblocked, by PX-040.** Jenkins had zero jobs configured
+(lost in PX-039's real wk-2 data loss) — the last acceptance criterion
+here couldn't be exercised until PX-040 recreated the job. Once it did,
+build #1 against the narrowed token failed for a real reason: PX-017's
+own re-sealing had put two *different* tokens into the two SealedSecret
+files by mistake (a data-entry slip, not a scope bug) — see PX-040's
+writeup for the full diagnosis. Fixed by re-sealing
+`jenkins-ghcr-sealedsecret.yaml` with the correct, already-confirmed-
+working token; build #2 succeeded with a real push. This is exactly
+what this criterion existed to catch — "the scopes look right" was
+never going to surface a mismatched-token bug, only a real build could.
 
 **Acceptance criteria:**
 - [x] `igalhub/proxmox-iac` confirmed public (prerequisite, owned by
@@ -1580,12 +1584,16 @@ look right" is the same as "the push works."
 - [x] `repo` scope removed — via a new packages-only token (bypass URL),
       not an in-place edit of the old token as originally planned; old
       broad-scope token revoked, both SealedSecrets re-sealed
-- [ ] A real pipeline run after the change confirms the push still
-      works — not assumed from "the scopes look right"
-- [ ] Checked whether a fine-grained, single-repo-scoped token is now
-      available for packages on a public repo; if so, note the finding
-      here and decide whether to switch (can be a follow-up decision,
-      not required to close this ticket)
+- [x] A real pipeline run after the change confirms the push still
+      works — PX-040's build #2, `Pushed
+      ghcr.io/igalhub/proxmox-iac-landing@sha256:298e21a9818d2cf7e3d0abaf6c23de61d673cce166a77b2e1fc6b1f0fc089413`,
+      confirmed via the job's own console log, not assumed
+- [x] Checked whether a fine-grained, single-repo-scoped token is now
+      available for packages on a public repo (2026-08-12): **no** —
+      GitHub's own docs still list Packages access as a documented gap
+      in fine-grained PATs, unconditional on repo visibility. Classic
+      PAT via the bypass URL remains the only option; nothing to switch
+      to.
 
 ---
 
@@ -3965,6 +3973,86 @@ wrong three separate times before being caught by a real test.
 
 ---
 
+## PX-040 — Jenkins `proxmox-iac-ci` job needs recreating; consider codifying it so this can't recur
+
+**Status:** DONE — closed out 2026-08-12.
+
+**Background:** Found while verifying PX-017's narrowed ghcr.io token
+(a real pipeline run was needed to confirm the push still works).
+Jenkins has zero jobs configured — `/var/jenkins_home` dates to
+2026-08-06 13:49, the exact timestamp of PX-039's real wk-2 destroy
+test, where Jenkins (`local-path`, node-pinned, never covered by
+PX-022's Longhorn migration) lost its entire home directory
+permanently. PX-039 documented the data loss itself accurately, but
+the follow-up — the `proxmox-iac-ci` job needing to be recreated before
+anything can use Jenkins again — was never actually done. Not a
+permissions/auth issue: `api/json` confirms `"jobs":[]`, `whoAmI`
+confirms correct admin auth.
+
+**This is the same underlying pattern PX-039 already found twice**
+(k3s node-password, Longhorn disk-status) showing up a third time in a
+different subsystem: state that only ever existed because a human
+clicked through a UI once, never captured as code, silently gone the
+moment the node holding it was destroyed. The job (multibranch/
+pipeline, SCM source, credentials binding, branch discovery, webhook
+vs. polling) was originally set up manually in Jenkins' UI, not
+codified anywhere in this repo — confirmed by its total absence now,
+not assumed.
+
+**Blocks:** PX-017's last acceptance criterion (a real pipeline run
+confirming the narrowed ghcr.io token still works) can't be exercised
+until this job exists again.
+
+**Acceptance criteria:**
+- [x] `proxmox-iac-ci` job recreated in Jenkins, pointing at this
+      repo's `Jenkinsfile` at root, with the real original config
+      choices confirmed against PX-013's own writeup (not guessed):
+      "Pipeline script from SCM" (single job, not multibranch),
+      `git@github.com:igalhub/proxmox-iac.git`, branch `master`,
+      credential `jenkins-github-deploy-key`, script path `Jenkinsfile`.
+      Also found and fixed a second piece of lost state not in the job
+      XML at all: the controller-wide Git SSH host-key verification
+      (`GitHostKeyVerificationConfiguration`) had reverted to Jenkins'
+      default with no `~/.ssh/known_hosts` — same "Bug 1" PX-013 hit
+      originally. Re-set to `ManuallyProvidedKeyVerificationStrategy`
+      with GitHub's current host keys fetched fresh from
+      `api.github.com/meta` (not reused from PX-013, in case of
+      rotation), verified by re-querying the live setting after.
+- [x] Codified: real job config fetched back from Jenkins post-creation
+      (not hand-written) and checked in at
+      `jenkins/jobs/proxmox-iac-ci/config.xml`, with
+      `jenkins/jobs/proxmox-iac-ci/README.md` documenting the exact
+      `createItem` restore command *and* the global host-key
+      prerequisite the XML alone doesn't cover — so a third
+      recreation-from-scratch is a documented command, not another
+      multi-stage investigation.
+- [x] A real build triggered and confirmed `SUCCESS` post-recreation —
+      build #2 (build #1 failed first, see below), console log shows a
+      genuine push: `Pushed
+      ghcr.io/igalhub/proxmox-iac-landing@sha256:298e21a9818d2cf7e3d0abaf6c23de61d673cce166a77b2e1fc6b1f0fc089413`.
+- [x] PX-017 unblocked — see below, a real second bug was caught by
+      requiring this rather than assuming.
+
+**Build #1 failed for a real reason, unrelated to this ticket's own
+work — caught, not glossed over.** First build (after the job +
+host-key fixes above) failed cleanly at the kaniko push step:
+`DENIED: denied` checking push permissions. Root cause traced via
+direct GitHub API token introspection, not assumed: PX-017's own
+re-sealing had put two *different* tokens into
+`k8s/jenkins/jenkins-ghcr-sealedsecret.yaml` and
+`k8s/landing-page/ghcr-pull-sealedsecret.yaml` — they should hold the
+same PAT. The landing-page one was valid (`200` against
+`api.github.com/user`); the Jenkins one returned `401 Bad credentials`
+outright, not a scope error. A data-entry slip during PX-017's manual
+`kubeseal` step, not a scope/policy problem. Also confirmed separately:
+the token briefly exposed in chat earlier in PX-017 is genuinely dead
+(`401`), so the revoke there held. Fixed by re-sealing
+`jenkins-ghcr-sealedsecret.yaml` with the confirmed-working token,
+verified live (`200`) before committing. Build **#2** then succeeded —
+see above.
+
+---
+
 ## Ticket status
 
 | Ticket | Title | Status |
@@ -3985,7 +4073,7 @@ wrong three separate times before being caught by a real test.
 | PX-014 | Landing page (live Prometheus metrics, real app) | DONE |
 | PX-015 | ArgoCD retrofit | DONE |
 | PX-016 | Resolve Proxmox memory-gauge inaccuracy (wk-1/wk-2/cp-1) | DONE |
-| PX-017 | Narrow ghcr.io push token scope once repo is public | OPEN |
+| PX-017 | Narrow ghcr.io push token scope once repo is public | DONE |
 | PX-018 | Stop relying on a personal global gitignore for `*.tfvars` | DONE |
 | PX-019 | CI Action version pinning audit | DONE |
 | PX-020 | Real Postgres backup story (WAL-E/WAL-G) | DONE |
@@ -4008,3 +4096,4 @@ wrong three separate times before being caught by a real test.
 | PX-037 | Fix flaky Molecule idempotence: get_url against get.k3s.io reports changed every rerun | DONE |
 | PX-038 | Jenkins Ansible Lint stage broken since PX-034 — missing ANSIBLE_ROLES_PATH | DONE |
 | PX-039 | Clean-slate VM rebuild: back up sealed-secrets key + credential inventory | DONE |
+| PX-040 | Jenkins proxmox-iac-ci job needs recreating; consider codifying it | DONE |
