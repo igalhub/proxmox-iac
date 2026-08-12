@@ -1501,9 +1501,14 @@ trail: `docs/TICKETS.md` PX-030.
 
 ## PX-017 — Narrow the ghcr.io push token's scope once the repo is public
 
-**Status:** OPEN — repo is now public and the token has been narrowed;
-still needs a real Jenkins pipeline run to confirm the push actually
-works before this closes.
+**Status:** BLOCKED (2026-08-06) — repo is now public and the token
+has been narrowed, but the final acceptance criterion (a real pipeline
+run confirming the narrowed token still works) can't be exercised
+right now: Jenkins has no jobs configured at all. Root cause traced,
+not assumed — the `proxmox-iac-ci` job's own config was lost in
+PX-039's real wk-2 data loss (Jenkins was never on Longhorn) and was
+never recreated. See PX-040. This ticket resumes once PX-040 is
+resolved, not before — it is not this ticket's own work to redo.
 
 **Background:** PX-014 needed a classic GitHub PAT to let Jenkins push
 the landing page image to `ghcr.io`. Real, hands-on investigation during
@@ -3965,6 +3970,54 @@ wrong three separate times before being caught by a real test.
 
 ---
 
+## PX-040 — Jenkins `proxmox-iac-ci` job needs recreating; consider codifying it so this can't recur
+
+**Status:** OPEN
+
+**Background:** Found while verifying PX-017's narrowed ghcr.io token
+(a real pipeline run was needed to confirm the push still works).
+Jenkins has zero jobs configured — `/var/jenkins_home` dates to
+2026-08-06 13:49, the exact timestamp of PX-039's real wk-2 destroy
+test, where Jenkins (`local-path`, node-pinned, never covered by
+PX-022's Longhorn migration) lost its entire home directory
+permanently. PX-039 documented the data loss itself accurately, but
+the follow-up — the `proxmox-iac-ci` job needing to be recreated before
+anything can use Jenkins again — was never actually done. Not a
+permissions/auth issue: `api/json` confirms `"jobs":[]`, `whoAmI`
+confirms correct admin auth.
+
+**This is the same underlying pattern PX-039 already found twice**
+(k3s node-password, Longhorn disk-status) showing up a third time in a
+different subsystem: state that only ever existed because a human
+clicked through a UI once, never captured as code, silently gone the
+moment the node holding it was destroyed. The job (multibranch/
+pipeline, SCM source, credentials binding, branch discovery, webhook
+vs. polling) was originally set up manually in Jenkins' UI, not
+codified anywhere in this repo — confirmed by its total absence now,
+not assumed.
+
+**Blocks:** PX-017's last acceptance criterion (a real pipeline run
+confirming the narrowed ghcr.io token still works) can't be exercised
+until this job exists again.
+
+**Acceptance criteria:**
+- [ ] `proxmox-iac-ci` job recreated in Jenkins, pointing at this
+      repo's `Jenkinsfile` at root, with the real original config
+      choices (SCM source, credentials binding, branch discovery,
+      trigger mechanism) — made deliberately with igalhub rather than
+      guessed, since the original setup was manual and its exact
+      choices aren't recoverable from anywhere in this repo
+- [ ] Decide whether the job itself should be codified going forward
+      (Jenkins Configuration as Code / Job DSL / a documented exact
+      manual-setup runbook) so a third recreation-from-scratch isn't
+      needed after any future node loss — matches the same
+      manual-vs-automate judgment call already made twice in PX-039
+- [ ] A real build triggered and confirmed `SUCCESS` post-recreation
+- [ ] PX-017 unblocked once the above confirms the narrowed token
+      still works via a real push, not assumed
+
+---
+
 ## Ticket status
 
 | Ticket | Title | Status |
@@ -4008,3 +4061,4 @@ wrong three separate times before being caught by a real test.
 | PX-037 | Fix flaky Molecule idempotence: get_url against get.k3s.io reports changed every rerun | DONE |
 | PX-038 | Jenkins Ansible Lint stage broken since PX-034 — missing ANSIBLE_ROLES_PATH | DONE |
 | PX-039 | Clean-slate VM rebuild: back up sealed-secrets key + credential inventory | DONE |
+| PX-040 | Jenkins proxmox-iac-ci job needs recreating; consider codifying it | OPEN |
